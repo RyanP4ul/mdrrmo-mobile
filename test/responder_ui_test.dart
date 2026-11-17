@@ -6,21 +6,24 @@ import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:forui/forui.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:mdrrmo_flutter/data/api/driver_service.api.dart';
+import 'package:mdrrmo_flutter/data/hospital.dart';
 import 'package:mdrrmo_flutter/data/models.dart';
 import 'package:mdrrmo_flutter/data/paged_records.dart';
+import 'package:mdrrmo_flutter/ui/kit.dart';
 import 'package:mdrrmo_flutter/screens/driver-responder/driver_form_screen.dart';
 import 'package:mdrrmo_flutter/screens/driver-responder/home_screen.dart';
 import 'package:mdrrmo_flutter/screens/driver-responder/history_screen.dart';
+import 'package:mdrrmo_flutter/screens/driver-responder/maintenance_form_screen.dart';
 import 'package:mdrrmo_flutter/screens/driver-responder/team_screen.dart';
 import 'package:mdrrmo_flutter/screens/driver-responder/shell.dart';
 import 'package:mdrrmo_flutter/screens/driver-responder/home_assignments_section.dart';
+import 'package:mdrrmo_flutter/screens/route_navigation_screen.dart';
 import 'package:mdrrmo_flutter/services/driver_realtime.dart';
 import 'package:mdrrmo_flutter/services/driver_tracking.dart';
 import 'package:mdrrmo_flutter/state/driver_responder_state.dart';
-import 'package:mdrrmo_flutter/ui/app_theme.dart';
-import 'package:mdrrmo_flutter/ui/kit.dart' show AppIcons, StepperBar;
 
 class ResponderUiApi extends DriverApi {
   ResponderUiApi({this.assigned = false, this.assignedServices = false})
@@ -246,14 +249,24 @@ class MultiAssignmentApi extends ResponderUiApi {
   Future<Map<String, dynamic>?> updateAssignmentStatus(
     int reportId,
     String status,
-  ) async {
+  ) => updateAssignmentStage(reportId, status);
+
+  @override
+  Future<Map<String, dynamic>?> updateAssignmentStage(
+    int reportId,
+    String status, {
+    int? hospitalId,
+    String? destination,
+  }) async {
     advancedId = reportId;
     return {
       'id': reportId,
       'location': 'Second incident',
       'type': 'Fire response',
       'priority': 'high',
-      'vehicle_status': status,
+      'response_status': status,
+      'vehicle_status': 'available',
+      'hospital_id': ?hospitalId,
       'status': 'dispatched',
       'vehicle_id': 5,
     };
@@ -263,6 +276,7 @@ class MultiAssignmentApi extends ResponderUiApi {
 class ProgressAssignmentApi extends ResponderUiApi {
   ProgressAssignmentApi() : super(assigned: true);
   String responseStatus = 'available';
+  int? hospitalId;
   final statuses = <String>[];
   bool completed = false;
 
@@ -273,11 +287,28 @@ class ProgressAssignmentApi extends ResponderUiApi {
     'priority': 'high',
     'status': 'dispatched',
     'vehicle_status': 'available',
+    if (hospitalId != null) 'hospital_id': hospitalId,
     'trip': {
       if (responseStatus != 'available') 'started_at': '2026-11-12T08:00:00Z',
-      if (responseStatus == 'on-scene') 'on_scene_at': '2026-11-12T08:10:00Z',
+      if (responseStatus == 'on-scene' || responseStatus == 'transporting')
+        'on_scene_at': '2026-11-12T08:10:00Z',
+      if (responseStatus == 'transporting')
+        'picked_up_at': '2026-11-12T08:15:00Z',
     },
   };
+
+  @override
+  Future<List<HospitalRecommendation>> fetchHospitals(int reportId) async =>
+      const [
+        HospitalRecommendation(
+          id: 1,
+          name: 'Bulacan Medical Center',
+          address: 'Malolos, Bulacan',
+          point: LatLng(14.858880, 120.817018),
+          distanceKm: 10.5,
+          specialtyMatch: true,
+        ),
+      ];
 
   @override
   Future<Map<String, dynamic>> fetchBootstrap() async => {
@@ -290,11 +321,20 @@ class ProgressAssignmentApi extends ResponderUiApi {
   Future<Map<String, dynamic>?> updateAssignmentStatus(
     int reportId,
     String status,
-  ) async {
+  ) => updateAssignmentStage(reportId, status);
+
+  @override
+  Future<Map<String, dynamic>?> updateAssignmentStage(
+    int reportId,
+    String status, {
+    int? hospitalId,
+    String? destination,
+  }) async {
     expect(reportId, 12);
     statuses.add(status);
     responseStatus = status;
-    completed = status == 'available';
+    if (hospitalId != null) this.hospitalId = hospitalId;
+    completed = status == 'available' || status == 'arrived';
     return completed ? null : currentAssignment;
   }
 }
@@ -377,11 +417,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(find.text('Saving update…'), findsNothing);
-      await tester.ensureVisible(find.text('Start trip'));
-      await tester.tap(find.text('Start trip'));
+      await tester.ensureVisible(find.widgetWithText(AppButton, 'Start trip'));
+      await tester.tap(find.widgetWithText(AppButton, 'Start trip'));
       expect(advanced, true);
-      await tester.ensureVisible(find.text('View report'));
-      await tester.tap(find.text('View report'));
+      expect(find.text('View report'), findsNothing);
+      expect(find.text('Fill Driver Form'), findsNothing);
+      await tester.ensureVisible(find.text('Incident #12'));
+      await tester.tap(find.text('Incident #12'));
       expect(details, true);
       final navigate = tester.widget<OutlinedButton>(
         find.widgetWithText(OutlinedButton, 'Navigate'),
@@ -400,14 +442,18 @@ void main() {
         app(ResponderScope(state: state, child: const ResponderTeamScreen())),
       );
       await tester.pumpAndSettle();
-      final available = find.byType(SwitchListTile);
-      expect(tester.widget<SwitchListTile>(available).value, true);
-      await tester.tap(available);
+      final toggle = find.byType(TeamRoleToggle);
+      expect(tester.widget<TeamRoleToggle>(toggle).isDriver, true);
+      expect(
+        tester.getTopLeft(find.text('Driver')).dx,
+        lessThan(tester.getTopLeft(find.text('Responder')).dx),
+      );
+      await tester.tap(find.text('Responder'));
       await tester.pumpAndSettle();
       expect(api.teamRole, 'Responder');
       expect(api.availability, 'available');
       expect(find.text('YOUR VEHICLE'), findsNothing);
-      expect(tester.widget<SwitchListTile>(available).value, false);
+      expect(tester.widget<TeamRoleToggle>(toggle).isDriver, false);
       await tester.pumpWidget(const SizedBox());
       state.dispose();
 
@@ -418,7 +464,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(tester.widget<SwitchListTile>(available).onChanged, isNull);
+      expect(tester.widget<TeamRoleToggle>(toggle).onChanged, isNull);
       expect(find.textContaining('Complete active dispatches'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
@@ -459,25 +505,25 @@ void main() {
       app(ResponderScope(state: state, child: const ResponderTeamScreen())),
     );
     await tester.pumpAndSettle();
-    final toggle = find.byType(SwitchListTile);
+    final toggle = find.byType(TeamRoleToggle);
     api.roleRequest = Completer<void>();
     api.failHistory = true;
-    await tester.tap(toggle);
+    await tester.tap(find.text('Responder'));
     await tester.pump();
-    expect(tester.widget<SwitchListTile>(toggle).value, false);
-    expect(tester.widget<SwitchListTile>(toggle).onChanged, isNull);
+    expect(tester.widget<TeamRoleToggle>(toggle).isDriver, false);
+    expect(tester.widget<TeamRoleToggle>(toggle).onChanged, isNull);
     api.roleRequest!.complete();
     await tester.pumpAndSettle();
     expect(api.teamRole, 'Responder');
     expect(state.canDispatch, false);
     expect(state.loadError, isNull);
-    expect(tester.widget<SwitchListTile>(toggle).value, false);
-    expect(tester.widget<SwitchListTile>(toggle).onChanged, isNotNull);
+    expect(tester.widget<TeamRoleToggle>(toggle).isDriver, false);
+    expect(tester.widget<TeamRoleToggle>(toggle).onChanged, isNotNull);
 
     api.roleRequest = null;
-    await tester.tap(toggle);
+    await tester.tap(find.text('Driver'));
     await tester.pumpAndSettle();
-    expect(tester.widget<SwitchListTile>(toggle).value, true);
+    expect(tester.widget<TeamRoleToggle>(toggle).isDriver, true);
     expect(state.canDispatch, true);
     await tester.pumpWidget(const SizedBox());
   });
@@ -494,13 +540,13 @@ void main() {
     await tester.pumpAndSettle();
     api.roleRequest = Completer<void>();
     api.rejectRole = true;
-    final toggle = find.byType(SwitchListTile);
-    await tester.tap(toggle);
+    final toggle = find.byType(TeamRoleToggle);
+    await tester.tap(find.text('Responder'));
     await tester.pump();
-    expect(tester.widget<SwitchListTile>(toggle).value, false);
+    expect(tester.widget<TeamRoleToggle>(toggle).isDriver, false);
     api.roleRequest!.complete();
     await tester.pumpAndSettle();
-    expect(tester.widget<SwitchListTile>(toggle).value, true);
+    expect(tester.widget<TeamRoleToggle>(toggle).isDriver, true);
     expect(state.canDispatch, true);
     expect(state.actionError, isA<StateError>());
     expect(tester.takeException(), isNull);
@@ -519,7 +565,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(
-      tester.widget<SwitchListTile>(find.byType(SwitchListTile)).onChanged,
+      tester.widget<TeamRoleToggle>(find.byType(TeamRoleToggle)).onChanged,
       isNull,
     );
     expect(find.textContaining('Maria Santos is the Driver'), findsOneWidget);
@@ -553,6 +599,9 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Voice calls'), findsNothing);
+    expect(find.text('Driver Form'), findsNothing);
+    expect(find.text('Maintenance Report'), findsNothing);
+    expect(find.text('Report an emergency'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     state.dispose();
     realtime.dispose();
@@ -594,7 +643,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Hello, Juan'), findsOneWidget);
-      expect(find.text('Start trip'), findsOneWidget);
+      expect(find.widgetWithText(AppButton, 'Start trip'), findsOneWidget);
       expect(find.text('Assignments'), findsOneWidget);
       expect(find.text('Ambulance Standby'), findsOneWidget);
       final container = find.byKey(
@@ -623,10 +672,15 @@ void main() {
             )
             .first,
       );
-      expect(tester.getTopLeft(find.text('Start trip')).dy, lessThan(700));
+      expect(
+        tester.getTopLeft(find.widgetWithText(AppButton, 'Start trip')).dy,
+        lessThan(700),
+      );
       expect(
         tester.getTopLeft(find.text('Around you')).dy,
-        greaterThan(tester.getTopLeft(find.text('Start trip')).dy),
+        greaterThan(
+          tester.getTopLeft(find.widgetWithText(AppButton, 'Start trip')).dy,
+        ),
       );
       await tester.scrollUntilVisible(
         find.text('Driver Form'),
@@ -638,6 +692,9 @@ void main() {
             )
             .first,
       );
+      await tester.ensureVisible(find.text('Driver Form'));
+      await tester.pumpAndSettle();
+      expect(find.text('Report an emergency'), findsNothing);
       await tester.tap(find.text('Driver Form'));
       await tester.pumpAndSettle();
       expect(find.text('Authorization'), findsOneWidget);
@@ -687,42 +744,58 @@ void main() {
           )
           .first;
       Future<void> press(String label) async {
+        final button = find.widgetWithText(AppButton, label);
         await tester.scrollUntilVisible(
-          find.text(label),
+          button,
           180,
           scrollable: scrollable,
         );
         await Scrollable.ensureVisible(
-          tester.element(find.text(label)),
+          tester.element(button),
           alignment: 0.5,
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text(label));
-        await tester.pumpAndSettle();
+        await tester.tap(button);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
       }
 
-      int currentStep() =>
-          tester.widget<StepperBar>(find.byType(StepperBar)).current;
+      StepperBar stepper() => tester.widget<StepperBar>(find.byType(StepperBar));
+      int currentStep() => stepper().current;
+      expect(stepper().labels, ['Start trip']);
       expect(currentStep(), 0);
+      expect(find.text('En route'), findsNothing);
+      expect(find.text('On scene'), findsNothing);
+      expect(find.text('Transporting'), findsNothing);
+      expect(find.text('Complete'), findsNothing);
       await press('Start trip');
-      expect(find.text('Start trip'), findsNothing);
-      expect(find.text('Mark as on scene'), findsOneWidget);
-      expect(currentStep(), 1);
-      await state.load();
+      // Start trip transitions to En route (step 1) and pushes navigation; pop back to Home.
+      expect(find.byType(RouteNavigationScreen), findsOneWidget);
+      Navigator.of(tester.element(find.byType(RouteNavigationScreen))).pop();
       await tester.pumpAndSettle();
-      expect(currentStep(), 1);
-      await press('Mark as on scene');
+      expect(find.widgetWithText(AppButton, 'Start trip'), findsNothing);
       expect(find.text('Mark as on scene'), findsNothing);
-      expect(find.text('Complete dispatch'), findsOneWidget);
-      expect(currentStep(), 2);
+      expect(stepper().labels, ['En route', 'On scene', 'Transporting', 'Complete']);
+      expect(currentStep(), 0);
+      // Simulate server advancing to on-scene (via 5m auto-arrival).
+      api.responseStatus = 'on-scene';
       await state.load();
       await tester.pumpAndSettle();
-      expect(currentStep(), 2);
-      await press('Complete dispatch');
-      expect(find.text('Complete dispatch?'), findsOneWidget);
-      await tester.tap(find.text('Complete dispatch').last);
+      expect(stepper().labels, ['En route', 'On scene', 'Transporting', 'Complete']);
+      expect(currentStep(), 1);
+      expect(find.widgetWithText(AppButton, 'Transporting'), findsOneWidget);
+      await press('Transporting');
+      expect(find.byType(RouteNavigationScreen), findsOneWidget);
+      Navigator.of(tester.element(find.byType(RouteNavigationScreen))).pop();
       await tester.pumpAndSettle();
-      expect(api.statuses, ['en-route', 'on-scene', 'available']);
+      expect(stepper().labels, ['En route', 'On scene', 'Transporting', 'Complete']);
+      expect(currentStep(), 2);
+      expect(find.widgetWithText(AppButton, 'Complete dispatch'), findsOneWidget);
+      await press('Complete dispatch');
+      expect(find.text('Arrived at hospital?'), findsOneWidget);
+      await tester.tap(find.text('Arrived').last);
+      await tester.pumpAndSettle();
+      expect(api.statuses, ['en-route', 'transporting', 'arrived']);
       expect(state.assignments, isEmpty);
       expect(find.text('Fill up Driver Form?'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
@@ -752,7 +825,7 @@ void main() {
       expect(find.text('Incident #13'), findsOneWidget);
       expect(state.assignment?.id, 12);
       await tester.scrollUntilVisible(
-        find.text('Mark as on scene'),
+        find.widgetWithText(AppButton, 'Start trip'),
         250,
         scrollable: find
             .descendant(
@@ -762,11 +835,15 @@ void main() {
             .first,
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Mark as on scene'));
+      await tester.tap(find.widgetWithText(AppButton, 'Start trip'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(RouteNavigationScreen), findsOneWidget);
+      Navigator.of(tester.element(find.byType(RouteNavigationScreen))).pop();
       await tester.pumpAndSettle();
-      expect(api.advancedId, 13);
-      expect(state.assignments.firstWhere((item) => item.id == 12).step, 0);
-      expect(state.assignments.firstWhere((item) => item.id == 13).step, 2);
+      expect(api.advancedId, 12);
+      expect(state.assignments.firstWhere((item) => item.id == 12).step, 1);
+      expect(state.assignments.firstWhere((item) => item.id == 13).step, 1);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       state.dispose();
@@ -788,7 +865,7 @@ void main() {
     expect(find.text('Ambulance Standby'), findsOneWidget);
     expect(find.text('Barangay hall'), findsOneWidget);
     expect(find.text('Details and progress'), findsOneWidget);
-    expect(find.text('Navigate'), findsOneWidget);
+    expect(find.text('Navigate to pickup'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -840,13 +917,16 @@ void main() {
       expect(find.text('Dispatch history'), findsOneWidget);
       await tester.tap(find.byIcon(FLucideIcons.ellipsis));
       await tester.pumpAndSettle();
-      expect(find.text('Account & profile'), findsOneWidget);
+      expect(find.text('Account & profile'), findsNothing);
+      expect(find.text('Reports I submitted'), findsNothing);
+      expect(find.text('Unconfirmed submissions'), findsNothing);
       expect(find.text('My account'), findsNothing);
       expect(find.text('Edit profile'), findsNothing);
       expect(find.text('Change password'), findsNothing);
       expect(find.text('My responder details'), findsNothing);
-      expect(find.text('Search records'), findsOneWidget);
+      expect(find.text('Search records'), findsNothing);
       expect(find.text('Announcements and advisories'), findsNothing);
+      expect(find.text('Refresh information'), findsOneWidget);
       expect(find.text('Log out'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
@@ -857,7 +937,7 @@ void main() {
   );
 
   testWidgets(
-    'My Team displays ambulance plate number, maintenance warning, switching, and driver-only maintenance report form',
+    'My Team displays ambulance plate number, switching, and driver-only maintenance report form without maintenance warning banner',
     (tester) async {
       final api = ResponderUiApi();
       final state = ResponderState(api: api);
@@ -871,7 +951,7 @@ void main() {
       expect(find.text('Plate No: RESCUE 01'), findsOneWidget);
       expect(
         find.text('Brake pads worn - inspect before shift'),
-        findsOneWidget,
+        findsNothing,
       );
       expect(find.text('Report maintenance'), findsOneWidget);
 
@@ -1014,6 +1094,130 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'maintenance form supports severity selection, vehicle summary, and history filters',
+    (tester) async {
+      final api = _MaintenanceHistoryApi();
+      final state = ResponderState(api: api);
+      addTearDown(state.dispose);
+      await state.load();
+
+      await tester.pumpWidget(
+        app(
+          ResponderScope(
+            state: state,
+            child: Builder(
+              builder: (context) => Center(
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ResponderScope(
+                        state: state,
+                        child: const MaintenanceFormScreen(),
+                      ),
+                    ),
+                  ),
+                  child: const Text('Open maintenance'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open maintenance'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Alpha Unit 1'), findsOneWidget);
+      expect(find.text('Plate No: RESCUE 01'), findsOneWidget);
+      await tester.tap(find.text('High'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Urgent issue affecting performance or safety.'),
+        findsOneWidget,
+      );
+
+      await tester.enterText(
+        find.byType(EditableText).last,
+        'Alternator belt squealing on startup.',
+      );
+      await tester.tap(find.text('Submit maintenance report'));
+      await tester.pumpAndSettle();
+      expect(api.submittedMaintenance?['severity'], 'high');
+      expect(find.text('Open maintenance'), findsOneWidget);
+
+      // Re-open to inspect History tab and status filters.
+      await tester.tap(find.text('Open maintenance'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('History (2)'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('MNT-2026-001'), findsOneWidget);
+      expect(find.text('MNT-2026-002'), findsOneWidget);
+      await tester.tap(find.text('Closed'));
+      await tester.pumpAndSettle();
+      expect(find.text('MNT-2026-001'), findsNothing);
+      expect(find.text('MNT-2026-002'), findsOneWidget);
+
+      await tester.tap(find.text('MNT-2026-002'));
+      await tester.pumpAndSettle();
+      expect(find.text('Admin note · Admin Reyes'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'dispatch history summary strip displays counts alongside priority badges',
+    (tester) async {
+      final state = ResponderState(api: ResponderUiApi());
+      addTearDown(state.dispose);
+      await state.load();
+
+      await tester.pumpWidget(
+        app(ResponderScope(state: state, child: const HistoryScreen())),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Done'), findsOneWidget);
+      expect(find.text('Forms saved'), findsOneWidget);
+      expect(find.text('Flagged'), findsOneWidget);
+      expect(find.text('2 records'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+}
+
+class _MaintenanceHistoryApi extends ResponderUiApi {
+  @override
+  Future<RecordPage> fetchMaintenanceReportsPage({int? before}) async =>
+      const RecordPage([
+        {
+          'id': 1,
+          'reference': 'MNT-2026-001',
+          'plate_number': 'RESCUE 01',
+          'vehicle_name': 'Alpha Unit 1',
+          'issue_type': 'Brakes / Tires',
+          'severity': 'high',
+          'mileage': 45120,
+          'description': 'Front brake pad wear indicator triggered.',
+          'recommend_out_of_service': true,
+          'status': 'pending',
+        },
+        {
+          'id': 2,
+          'reference': 'MNT-2026-002',
+          'plate_number': 'RESCUE 02',
+          'vehicle_name': 'Bravo Unit 2',
+          'issue_type': 'Electrical / Siren / Lights',
+          'severity': 'low',
+          'description': 'Replaced rear strobe fuse.',
+          'recommend_out_of_service': false,
+          'status': 'resolved',
+          'reviewer_name': 'Admin Reyes',
+          'admin_notes': 'Cleared for deployment after test run.',
+        },
+      ], null);
 }
 
 class _ConflictDriverFormApi extends ResponderUiApi {

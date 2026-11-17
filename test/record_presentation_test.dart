@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:mdrrmo_flutter/data/api_client.dart';
 import 'package:mdrrmo_flutter/screens/record_details_screen.dart';
 import 'package:mdrrmo_flutter/screens/responder_records_screen.dart';
+import 'package:mdrrmo_flutter/ui/kit.dart';
 import 'package:mdrrmo_flutter/ui/record_widgets.dart';
 
 import 'responder_ui_test.dart' show app;
@@ -209,7 +210,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Dispatched'), findsOneWidget);
       expect(find.text('High Priority'), findsOneWidget);
-      expect(find.text('Voice call invitations'), findsOneWidget);
+      expect(find.text('Voice call invitations'), findsNothing);
+      expect(find.text('Edit trip record'), findsNothing);
+      expect(find.text('Driver Form'), findsNothing);
+      expect(find.text('Patient-care form'), findsNothing);
       await tester.scrollUntilVisible(
         find.text('Awaiting team assignment'),
         200,
@@ -244,8 +248,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('1 unread update from MDRRMO.'), findsOneWidget);
-      expect(find.text('View details →'), findsWidgets);
+      expect(find.text('1 unread'), findsOneWidget);
+      expect(find.byIcon(AppIcons.chevron), findsWidgets);
       expect(find.text('Mark all read'), findsOneWidget);
 
       await tester.tap(find.text('Mark all read'));
@@ -254,10 +258,7 @@ void main() {
       expect(adapter.read, contains(9));
       expect(changes, 1);
       expect(find.text('Mark all read'), findsNothing);
-      expect(
-        find.text('Assignments, scheduled services, and team updates.'),
-        findsOneWidget,
-      );
+      expect(find.text('1 unread'), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     },

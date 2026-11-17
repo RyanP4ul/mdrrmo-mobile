@@ -126,6 +126,8 @@ class Assignment {
     this.patientName = '',
     this.authorizedPassenger = '',
     this.hasDriverForm = false,
+    this.hospitalId,
+    this.unavailableHospitalIds = const [],
   });
 
   final int id;
@@ -142,21 +144,37 @@ class Assignment {
   final String patientName;
   final String authorizedPassenger;
   final bool hasDriverForm;
+  final int? hospitalId;
+  final List<int> unavailableHospitalIds;
   int step;
   bool isNew;
 
-  static const steps = ['Assigned', 'En route', 'On scene'];
+  static const steps = [
+    'Start trip',
+    'En route',
+    'On scene',
+    'Transporting',
+    'Complete',
+  ];
   static const actions = [
     'Start trip',
-    'Mark as on scene',
+    'En route',
+    'Transporting',
+    'Complete dispatch',
     'Complete dispatch',
   ];
+
+  bool get hasActionButton => step == 0 || step == 2 || step == 3;
 
   String get actionLabel => actions[step.clamp(0, actions.length - 1).toInt()];
 
   factory Assignment.fromJson(Map<String, dynamic> json) {
     final trip = json['trip'] as Map?;
-    final tripStatus = trip?['on_scene_at'] != null
+    final tripStatus = trip?['arrived_at'] != null
+        ? 'arrived'
+        : trip?['picked_up_at'] != null
+        ? 'transporting'
+        : trip?['on_scene_at'] != null
         ? 'on-scene'
         : trip?['started_at'] != null
         ? 'en-route'
@@ -171,6 +189,8 @@ class Assignment {
     final step = switch (vehicleStatus) {
       'en-route' => 1,
       'on-scene' || 'returning' => 2,
+      'transporting' => 3,
+      'arrived' => 4,
       'available' || 'offline' || 'maintenance' => 0,
       _ => throw FormatException(
         'Unsupported assignment vehicle status: $vehicleStatus',
@@ -180,6 +200,21 @@ class Assignment {
     if (reportId is! int) {
       throw const FormatException('Assignment is missing a valid report ID.');
     }
+
+    final rawHospitalId = json['hospital_id'] ?? trip?['hospital_id'];
+    final hospitalId = rawHospitalId is int
+        ? rawHospitalId
+        : int.tryParse('$rawHospitalId');
+    final rawUnavailable =
+        (json['unavailable_hospital_ids'] ??
+                trip?['unavailable_hospital_ids'])
+            as List?;
+    final unavailableHospitalIds = rawUnavailable == null
+        ? const <int>[]
+        : rawUnavailable
+              .map((e) => e is int ? e : int.tryParse('$e'))
+              .whereType<int>()
+              .toList(growable: false);
 
     return Assignment(
       id: reportId,
@@ -200,6 +235,8 @@ class Assignment {
       patientName: json['patient_name']?.toString() ?? '',
       authorizedPassenger: json['authorized_passenger']?.toString() ?? '',
       hasDriverForm: json['has_driver_form'] == true,
+      hospitalId: hospitalId,
+      unavailableHospitalIds: unavailableHospitalIds,
     );
   }
 }

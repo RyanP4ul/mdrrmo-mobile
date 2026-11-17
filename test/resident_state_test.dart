@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:latlong2/latlong.dart';
@@ -75,6 +76,8 @@ class FakeResidentApi extends ResidentApi {
     required double latitude,
     required double longitude,
     required String description,
+    Uint8List? photoBytes,
+    String? photoName,
   }) async => {
     '_submission_replayed': true,
     'report': {...bootstrapReports.single, 'status': 'pending'},

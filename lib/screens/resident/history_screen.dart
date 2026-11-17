@@ -43,11 +43,7 @@ class _ResidentHistoryScreenState extends State<ResidentHistoryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const ResidentHeading(
-                  'My reports',
-                  subtitle:
-                      'Follow each incident from submission to resolution.',
-                ),
+                const ResidentHeading('My reports'),
                 Segmented<bool>(
                   value: _openOnly,
                   onChanged: (value) => setState(() => _openOnly = value),
@@ -64,23 +60,25 @@ class _ResidentHistoryScreenState extends State<ResidentHistoryScreen> {
                         ? 'No reports in progress'
                         : 'No reports yet',
                     message: _openOnly
-                        ? 'Choose All reports to review your previous incidents.'
-                        : 'Use Report an incident on Home when you need to send details to MDRRMO.',
-                  ),
-                for (final report in reports)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: ResidentReportCard(
-                      report: report,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => RecordDetailsScreen(
-                            id: report.id,
-                            onChanged: state.load,
+                        ? 'Choose All reports to review previous incidents.'
+                        : 'Use Report an incident on Home to contact MDRRMO.',
+                  )
+                else
+                  AppSectionGroup(
+                    children: [
+                      for (final report in reports)
+                        ResidentReportCard(
+                          report: report,
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => RecordDetailsScreen(
+                                id: report.id,
+                                onChanged: state.load,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
+                    ],
                   ),
                 PageLoader(
                   hasMore: state.hasMore('reports'),

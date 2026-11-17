@@ -7,7 +7,7 @@ class NotificationsHeaderSection extends StatelessWidget {
   const NotificationsHeaderSection({
     super.key,
     required this.title,
-    required this.subtitle,
+    this.subtitle,
     required this.unreadOnly,
     required this.unreadCount,
     required this.onFilterChanged,
@@ -15,7 +15,7 @@ class NotificationsHeaderSection extends StatelessWidget {
   });
 
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final bool unreadOnly;
   final int unreadCount;
   final ValueChanged<bool> onFilterChanged;
@@ -29,7 +29,17 @@ class NotificationsHeaderSection extends StatelessWidget {
         AppHeading(
           title,
           subtitle: subtitle,
-          bottomSpacing: AppSpacing.md + 2,
+          bottomSpacing: AppSpacing.md,
+          trailing: unreadCount > 0
+              ? TextButton.icon(
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 44),
+                  ),
+                  onPressed: onMarkAllRead,
+                  icon: const Icon(AppIcons.check, size: 16),
+                  label: const Text('Mark all read'),
+                )
+              : null,
         ),
         Segmented<bool>(
           value: unreadOnly,
@@ -39,27 +49,13 @@ class NotificationsHeaderSection extends StatelessWidget {
             SegmentOption(true, 'Unread'),
           ],
         ),
-        if (unreadCount > 0) ...[
-          const SizedBox(height: AppSpacing.xs),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              style: TextButton.styleFrom(
-                minimumSize: const Size(0, 44),
-              ),
-              onPressed: onMarkAllRead,
-              icon: const Icon(AppIcons.check, size: 16),
-              label: const Text('Mark all read'),
-            ),
-          ),
-        ] else
-          const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.lg),
       ],
     );
   }
 }
 
-/// Shared notification card matching the Resident Updates UI/UX.
+/// Clean notification list row designed for placement inside [AppSectionGroup].
 class NotificationUpdateTile extends StatelessWidget {
   const NotificationUpdateTile({
     super.key,
@@ -92,96 +88,111 @@ class NotificationUpdateTile extends StatelessWidget {
 
     return Semantics(
       label: '${unread ? 'Unread. ' : ''}$semanticsTitle$message',
-      child: Surface(
-        padding: const EdgeInsets.all(14),
-        radius: AppRadius.md,
-        tint: unread
+      button: onTap != null,
+      child: Material(
+        color: unread
             ? Color.alphaBlend(
-                palette.brand.withValues(
-                  alpha: palette.isDark ? 0.12 : 0.05,
-                ),
+                palette.brand.withValues(alpha: palette.isDark ? 0.10 : 0.04),
                 palette.surface,
               )
-            : null,
-        borderColor: unread ? palette.brand.withValues(alpha: 0.32) : null,
-        onTap: onTap,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(9),
-              decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-              ),
-              child: Icon(icon, size: 20, color: iconColor),
+            : palette.surface,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md + 2,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (hasTitle) ...[
-                    Text(
-                      title!,
-                      style: MdrrmoTypography.bodyMd.copyWith(
-                        color: palette.textPrimary,
-                        fontWeight: unread ? FontWeight.w700 : FontWeight.w600,
-                      ),
-                    ),
-                    if (message.trim().isNotEmpty) ...[
-                      const SizedBox(height: 2),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: iconColor.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Icon(icon, size: 18, color: iconColor),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (hasTitle) ...[
+                        Text(
+                          title!,
+                          style: MdrrmoTypography.bodyMd.copyWith(
+                            color: palette.textPrimary,
+                            fontWeight: unread ? FontWeight.w700 : FontWeight.w600,
+                          ),
+                        ),
+                        if (message.trim().isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            message,
+                            style: MdrrmoTypography.bodySm.copyWith(
+                              color: palette.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ] else
+                        Text(
+                          message,
+                          style: MdrrmoTypography.bodyMd.copyWith(
+                            color: palette.textPrimary,
+                            fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                        ),
+                      const SizedBox(height: 4),
                       Text(
-                        message,
-                        style: MdrrmoTypography.bodySm.copyWith(
-                          color: palette.textSecondary,
+                        timestampText,
+                        style: MdrrmoTypography.labelSm.copyWith(
+                          color: palette.textMuted,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                     ],
-                  ] else
-                    Text(
-                      message,
-                      style: MdrrmoTypography.bodyMd.copyWith(
-                        color: palette.textPrimary,
-                        fontWeight: unread ? FontWeight.w700 : FontWeight.w400,
-                      ),
-                    ),
-                  const SizedBox(height: 6),
-                  Text(
-                    timestampText,
-                    style: MdrrmoTypography.labelSm.copyWith(
-                      color: palette.textMuted,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                  if (hasDetails) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      opening ? 'Opening...' : 'View details →',
-                      style: MdrrmoTypography.labelSm.copyWith(
-                        color: palette.brand,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (unread)
-              Padding(
-                padding: const EdgeInsets.only(left: 8, top: 4),
-                child: Semantics(
-                  label: 'Unread notification',
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: palette.brand,
-                      shape: BoxShape.circle,
-                    ),
                   ),
                 ),
-              ),
-          ],
+                const SizedBox(width: AppSpacing.sm),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (unread)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 6),
+                        child: Semantics(
+                          label: 'Unread notification',
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: palette.brand,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (opening)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else if (hasDetails)
+                      Icon(
+                        AppIcons.chevron,
+                        size: 18,
+                        color: palette.textMuted,
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

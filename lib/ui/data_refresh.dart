@@ -6,9 +6,15 @@ import '../services/internet_connection.dart';
 
 /// Refreshes server data while the module is foregrounded and when it resumes.
 class DataRefresh extends StatefulWidget {
-  const DataRefresh({super.key, required this.onRefresh, required this.child});
+  const DataRefresh({
+    super.key,
+    required this.onRefresh,
+    required this.child,
+    this.interval = const Duration(seconds: 30),
+  });
   final Future<void> Function() onRefresh;
   final Widget child;
+  final Duration interval;
 
   @override
   State<DataRefresh> createState() => _DataRefreshState();
@@ -23,11 +29,24 @@ class _DataRefreshState extends State<DataRefresh> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     InternetConnection.instance.addListener(_connectionChanged);
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(widget.interval, (_) {
       if (_foreground && InternetConnection.instance.online) {
         unawaited(widget.onRefresh());
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(DataRefresh oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.interval != widget.interval) {
+      _startTimer();
+    }
   }
 
   @override

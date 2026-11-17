@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../screens/driver-responder/shell.dart';
+import '../location_access_gate.dart';
 import '../../state/driver_responder_state.dart';
 import '../../ui/data_refresh.dart';
 import '../../services/driver_tracking.dart';
@@ -46,16 +47,26 @@ class _ResponderAppState extends State<ResponderApp> {
   }
 
   @override
-  Widget build(BuildContext context) => DataRefresh(
-    onRefresh: () async {
-      await Future.wait([_state.load(), _live.refreshFleet()]);
-    },
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _live,
+    builder: (context, child) => DataRefresh(
+      interval: _live.connected
+          ? const Duration(seconds: 30)
+          : const Duration(seconds: 5),
+      onRefresh: () async {
+        await Future.wait([_state.load(), _live.refreshFleet()]);
+      },
+      child: child!,
+    ),
     child: ResponderScope(
       state: _state,
-      child: Shell(
-        tracking: _tracking,
-        realtime: _live,
-        onLocationAccessChanged: _automatic.setLocationAccess,
+      child: LocationAccessGate(
+        onAccessChanged: _automatic.setLocationAccess,
+        child: Shell(
+          tracking: _tracking,
+          realtime: _live,
+          onLocationAccessChanged: _automatic.setLocationAccess,
+        ),
       ),
     ),
   );

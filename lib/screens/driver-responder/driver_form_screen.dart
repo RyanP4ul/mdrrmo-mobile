@@ -667,7 +667,6 @@ class _DriverFormScreenState extends State<DriverFormScreen> {
                   child: AppButton(
                     kind: AppButtonKind.secondary,
                     label: 'Reload Latest Form',
-                    icon: AppIcons.refresh,
                     onPress: _loadingForm || _saving
                         ? null
                         : () => _loadRemoteForm(state, _selectedReportId!),
@@ -685,16 +684,15 @@ class _DriverFormScreenState extends State<DriverFormScreen> {
               icon: AppIcons.route,
               title: 'No dispatch selected',
               message:
-                  'Once you receive or complete an emergency response, you can select it here to submit its Driver Form.',
+                  'Receive or complete an emergency dispatch to submit a Driver Form.',
             ),
           )
         else if (_options.length > 1 || widget.initialRecord == null)
-          FormGroup(
-            title: 'Dispatch Selection',
-            icon: AppIcons.route,
+          _DriverSection(
+            title: 'Dispatch',
             fields: [
               AppSelect(
-                label: 'Select Dispatch (Active or Recent Resolved)',
+                label: 'Select Dispatch',
                 options: [for (final o in _options) o.label],
                 value: (selectedOption ?? _options.first).label,
                 onChange: (label) {
@@ -712,19 +710,9 @@ class _DriverFormScreenState extends State<DriverFormScreen> {
                 },
               ),
             ],
-          )
-        else ...[
-          const AppBanner(
-            tone: AppBannerTone.info,
-            icon: AppIcons.infoCircle,
-            message:
-                'Authorization and Fuel Form for this dispatch. Separate from the clinical Patient-care form.',
           ),
-          const SizedBox(height: AppSpacing.lg),
-        ],
-        FormGroup(
+        _DriverSection(
           title: 'Authorization',
-          icon: AppIcons.user,
           fields: [
             AppDateField(
               label: 'Trip Date',
@@ -749,28 +737,31 @@ class _DriverFormScreenState extends State<DriverFormScreen> {
             AppTextField(
               controller: _authorizedPassenger,
               label: 'Authorized Passenger',
-              hint: 'Auto-filled from patient / responder names',
+              hint: 'Responders or patient names',
               maxLength: 255,
               required: false,
             ),
             AppTextField(
               controller: _destination,
               label: 'Destination / Place to Visit',
-              hint: 'Incident location or hospital destination',
+              hint: 'Incident or hospital location',
               maxLength: 255,
             ),
             AppTextField(
               controller: _purpose,
               label: 'Purpose of Trip',
-              hint: 'e.g. Emergency Response - Medical emergency',
+              hint: 'e.g. Emergency Response',
               maxLength: 255,
             ),
           ],
         ),
-        FormGroup(
+        _DriverSection(
           title: 'Fuel',
-          icon: AppIcons.car,
           fields: [
+            _FuelSummaryStrip(
+              totalController: _totalAvailableFuel,
+              remainingController: _remainingFuel,
+            ),
             AppTextField(
               controller: _balanceInTank,
               label: 'Balance in Tank (L)',
@@ -801,11 +792,6 @@ class _DriverFormScreenState extends State<DriverFormScreen> {
               required: false,
               validator: _validateNonNegativeFuel,
             ),
-            _ComputedFuelInset(
-              label: 'Total Available Fuel (L)',
-              helper: 'Calculated automatically (Balance + Issued + Purchased)',
-              controller: _totalAvailableFuel,
-            ),
             AppTextField(
               controller: _fuelUsedDuringTrip,
               label: 'Fuel Used During Trip (L)',
@@ -815,11 +801,6 @@ class _DriverFormScreenState extends State<DriverFormScreen> {
               ),
               required: false,
               validator: _validateNonNegativeFuel,
-            ),
-            _ComputedFuelInset(
-              label: 'Remaining Fuel (L)',
-              helper: 'Calculated automatically (Total Available - Fuel Used)',
-              controller: _remainingFuel,
             ),
             AppTextField(
               controller: _gearOilUsed,
@@ -839,68 +820,147 @@ class _DriverFormScreenState extends State<DriverFormScreen> {
   }
 }
 
-class _ComputedFuelInset extends StatelessWidget {
-  const _ComputedFuelInset({
-    required this.label,
-    required this.helper,
-    required this.controller,
-  });
+class _DriverSection extends StatelessWidget {
+  const _DriverSection({required this.title, required this.fields});
 
-  final String label;
-  final String helper;
-  final TextEditingController controller;
+  final String title;
+  final List<Widget> fields;
 
   @override
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
-    return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: controller,
-      builder: (context, value, _) {
-        final text = value.text.trim();
-        return Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.md,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Text(
+              title,
+              style: MdrrmoTypography.titleMd.copyWith(
+                color: palette.textPrimary,
+              ),
+            ),
           ),
+          Surface(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < fields.length; i++) ...[
+                  if (i > 0) const SizedBox(height: AppSpacing.md),
+                  fields[i],
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FuelSummaryStrip extends StatelessWidget {
+  const _FuelSummaryStrip({
+    required this.totalController,
+    required this.remainingController,
+  });
+
+  final TextEditingController totalController;
+  final TextEditingController remainingController;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = MdrrmoColors.of(context);
+    return ListenableBuilder(
+      listenable: Listenable.merge([totalController, remainingController]),
+      builder: (context, _) {
+        final totalText = totalController.text.trim();
+        final remainingText = remainingController.text.trim();
+        final remainingValue = double.tryParse(remainingText);
+        final negativeRemaining =
+            remainingValue != null && remainingValue < 0;
+
+        Widget metric(String label, String raw, {Color? valueColor}) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: MdrrmoTypography.labelSm.copyWith(
+                  color: palette.textMuted,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                raw.isEmpty ? '— L' : '$raw L',
+                style: MdrrmoTypography.tabular(
+                  MdrrmoTypography.titleLg.copyWith(
+                    color: valueColor ?? palette.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        return Container(
+          padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(
             color: palette.surfaceSubtle,
             borderRadius: BorderRadius.circular(AppRadius.sm),
             border: Border.all(color: palette.border),
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final stacked =
+                  constraints.maxWidth < 260 ||
+                  MediaQuery.textScalerOf(context).scale(1) > 1.3;
+              if (stacked) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      label,
-                      style: MdrrmoTypography.bodySm.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: palette.textPrimary,
-                      ),
+                    metric('Total Available Fuel (L)', totalText),
+                    Divider(height: AppSpacing.lg, color: palette.border),
+                    metric(
+                      'Remaining Fuel (L)',
+                      remainingText,
+                      valueColor: negativeRemaining
+                          ? palette.danger
+                          : remainingText.isNotEmpty
+                          ? palette.brand
+                          : null,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      helper,
-                      style: MdrrmoTypography.labelSm.copyWith(
-                        fontWeight: FontWeight.w400,
-                        color: palette.textMuted,
+                  ],
+                );
+              }
+              return IntrinsicHeight(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: metric('Total Available Fuel (L)', totalText),
+                    ),
+                    VerticalDivider(
+                      width: AppSpacing.lg,
+                      thickness: 1,
+                      color: palette.border,
+                    ),
+                    Expanded(
+                      child: metric(
+                        'Remaining Fuel (L)',
+                        remainingText,
+                        valueColor: negativeRemaining
+                            ? palette.danger
+                            : remainingText.isNotEmpty
+                            ? palette.brand
+                            : null,
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Text(
-                text.isEmpty ? '— L' : '$text L',
-                style: MdrrmoTypography.tabular(
-                  MdrrmoTypography.titleMd.copyWith(
-                    color: palette.textPrimary,
-                  ),
-                ),
-              ),
-            ],
+              );
+            },
           ),
         );
       },

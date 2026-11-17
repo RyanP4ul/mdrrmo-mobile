@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -82,10 +83,7 @@ class ResponderTeamScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const ResponderHeading(
-                  'Your team',
-                  subtitle: 'Choose your team role and stay connected.',
-                ),
+                const ResponderHeading('Your team'),
                 if (state.isLoading && !state.hasLoaded)
                   const Padding(
                     padding: EdgeInsets.only(bottom: AppSpacing.md),
@@ -95,15 +93,14 @@ class ResponderTeamScreen extends StatelessWidget {
                   AppBanner(
                     tone: AppBannerTone.warning,
                     icon: AppIcons.wifiOff,
-                    title: 'Could not refresh your team',
+                    title: 'Could not refresh team',
                     message: apiErrorMessage(state.loadError!),
-                    action: TextButton.icon(
+                    action: TextButton(
                       style: TextButton.styleFrom(
-                        minimumSize: const Size(0, 48),
+                        minimumSize: const Size(0, 44),
                       ),
                       onPressed: state.isLoading ? null : state.load,
-                      icon: const Icon(AppIcons.refresh, size: 17),
-                      label: const Text('Try again'),
+                      child: const Text('Try again'),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
@@ -111,155 +108,236 @@ class ResponderTeamScreen extends StatelessWidget {
                 if (state.teamRoles.isEmpty && state.hasLoaded)
                   const AppStateView(
                     icon: AppIcons.users,
-                    title: 'No active team membership',
-                    message:
-                        'Ask the dispatcher to link your account to a response team.',
+                    title: 'No team assigned',
+                    message: 'Contact dispatch to join a response team.',
                   ),
                 for (final team in state.teamRoles)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                    child: ResponderPanel(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          SwitchListTile.adaptive(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(
-                              '${team.teamName}: Driver',
-                              style: MdrrmoTypography.titleMd.copyWith(
-                                color: palette.textPrimary,
-                              ),
-                            ),
-                            subtitle: Padding(
-                              padding: const EdgeInsets.only(top: AppSpacing.xs),
-                              child: Text(
-                                team.locked
-                                    ? 'Your role: ${team.role}. Complete active dispatches or service trips before changing roles.'
-                                    : team.isDriver
-                                    ? 'You are the Driver. Only you can view and start dispatches on Home. Switch off to become a Responder.'
-                                    : !team.canBeDriver
-                                    ? '${team.driverName ?? 'Another member'} is the Driver. The current Driver must switch back or dispatch must reassign the role.'
-                                    : 'You are a Responder. Switch on to become the team Driver.',
-                                style: MdrrmoTypography.bodySm.copyWith(
-                                  height: 1.45,
-                                  color: palette.textSecondary,
+                    child: _TeamCard(
+                      team: team,
+                      busy: busy,
+                      onToggleRole: (value) =>
+                          _role(context, state, team, value),
+                      onSwitchVehicle: (vehicleId) =>
+                          _switchVehicle(context, state, team, vehicleId),
+                      onReportMaintenance: (vehicleId) =>
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ResponderScope(
+                                state: state,
+                                child: MaintenanceFormScreen(
+                                  initialVehicleId: vehicleId,
                                 ),
                               ),
                             ),
-                            value: team.isDriver,
-                            onChanged:
-                                busy ||
-                                    team.locked ||
-                                    (!team.isDriver && !team.canBeDriver)
-                                ? null
-                                : (value) =>
-                                      _role(context, state, team, value),
                           ),
-                          if (team.activeVehicle != null ||
-                              team.vehicles.isNotEmpty) ...[
-                            Divider(height: AppSpacing.xxl, color: palette.border),
-                            _TeamAmbulanceSection(
-                              team: team,
-                              busy: busy,
-                              onSwitchVehicle: (vehicleId) => _switchVehicle(
-                                context,
-                                state,
-                                team,
-                                vehicleId,
-                              ),
-                              onReportMaintenance: (vehicleId) =>
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => ResponderScope(
-                                        state: state,
-                                        child: MaintenanceFormScreen(
-                                          initialVehicleId: vehicleId,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                            ),
-                          ],
-                        ],
-                      ),
                     ),
                   ),
-                const SizedBox(height: AppSpacing.md),
-                ResponderHeading(
-                  'Team directory',
-                  subtitle: '$active of ${state.teams.length} recently active',
+                const SizedBox(height: AppSpacing.sm),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Members',
+                          style: MdrrmoTypography.titleMd.copyWith(
+                            color: palette.textPrimary,
+                          ),
+                        ),
+                      ),
+                      if (state.teams.isNotEmpty)
+                        Text(
+                          '$active active',
+                          style: MdrrmoTypography.labelSm.copyWith(
+                            color: active > 0
+                                ? palette.success
+                                : palette.textMuted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
                 if (state.teams.isEmpty && state.hasLoaded)
-                  const ResponderEmptyState(
-                    icon: AppIcons.users,
-                    title: 'No team members yet',
-                    message:
-                        'Members appear here when dispatch links you to a response team.',
-                  ),
-                for (final member in state.teams)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: ResponderPanel(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Row(
-                        children: [
-                          InitialsAvatar(
-                            member.name,
-                            online: member.online,
-                            size: 44,
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  member.name,
-                                  style: MdrrmoTypography.titleMd.copyWith(
-                                    color: palette.textPrimary,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  member.role,
-                                  style: MdrrmoTypography.bodySm.copyWith(
-                                    color: palette.textSecondary,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  member.online
-                                      ? 'Active in the last 90 seconds'
-                                      : 'Not recently active',
-                                  style: MdrrmoTypography.labelSm.copyWith(
-                                    color: member.online
-                                        ? palette.success
-                                        : palette.textMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton.filledTonal(
-                            style: IconButton.styleFrom(
-                              minimumSize: const Size(48, 48),
-                            ),
-                            tooltip: member.contact.isEmpty
-                                ? 'No phone number recorded'
-                                : 'Call ${member.name}',
-                            onPressed: member.contact.isEmpty
-                                ? null
-                                : () => _call(context, member),
-                            icon: const Icon(AppIcons.phoneCall, size: 19),
-                          ),
-                        ],
+                  Surface(
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    child: Text(
+                      'No team members listed yet.',
+                      textAlign: TextAlign.center,
+                      style: MdrrmoTypography.bodySm.copyWith(
+                        color: palette.textSecondary,
                       ),
                     ),
+                  )
+                else if (state.teams.isNotEmpty)
+                  AppSectionGroup(
+                    children: [
+                      for (final member in state.teams)
+                        _MemberRow(
+                          member: member,
+                          onCall: member.contact.isEmpty
+                              ? null
+                              : () => _call(context, member),
+                        ),
+                    ],
                   ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TeamCard extends StatelessWidget {
+  const _TeamCard({
+    required this.team,
+    required this.busy,
+    required this.onToggleRole,
+    required this.onSwitchVehicle,
+    required this.onReportMaintenance,
+  });
+
+  final TeamRole team;
+  final bool busy;
+  final ValueChanged<bool> onToggleRole;
+  final ValueChanged<int> onSwitchVehicle;
+  final ValueChanged<int?> onReportMaintenance;
+
+  String? get _roleNotice {
+    if (team.locked) {
+      return 'Complete active dispatches before changing roles.';
+    }
+    if (!team.isDriver && !team.canBeDriver) {
+      return '${team.driverName ?? 'Another member'} is the Driver.';
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = MdrrmoColors.of(context);
+    final hasVehicle = team.activeVehicle != null || team.vehicles.isNotEmpty;
+    final canSwitch =
+        !(busy || team.locked || (!team.isDriver && !team.canBeDriver));
+
+    return ResponderPanel(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            team.teamName,
+            style: MdrrmoTypography.titleMd.copyWith(
+              color: palette.textPrimary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm + 2),
+          TeamRoleToggle(
+            key: ValueKey('team-role-toggle-${team.teamId}'),
+            isDriver: team.isDriver,
+            onChanged: canSwitch ? onToggleRole : null,
+          ),
+          if (_roleNotice != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              _roleNotice!,
+              style: MdrrmoTypography.bodySm.copyWith(
+                color: palette.textSecondary,
+              ),
+            ),
+          ],
+          if (hasVehicle) ...[
+            Divider(height: AppSpacing.xl, color: palette.border),
+            _TeamAmbulanceSection(
+              team: team,
+              busy: busy,
+              onSwitchVehicle: onSwitchVehicle,
+              onReportMaintenance: onReportMaintenance,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Two-sided pill toggle with `Driver` on the left and `Responder` on the right.
+class TeamRoleToggle extends StatelessWidget {
+  const TeamRoleToggle({
+    super.key,
+    required this.isDriver,
+    required this.onChanged,
+  });
+
+  final bool isDriver;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = MdrrmoColors.of(context);
+    final enabled = onChanged != null;
+
+    Widget option({required String label, required bool driverValue}) {
+      final selected = isDriver == driverValue;
+      return Expanded(
+        child: Semantics(
+          button: true,
+          enabled: enabled,
+          selected: selected,
+          label: label,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: !enabled || selected
+                ? null
+                : () {
+                    HapticFeedback.selectionClick();
+                    onChanged!(driverValue);
+                  },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              constraints: const BoxConstraints(minHeight: 44),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.sm,
+              ),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? palette.brand : Colors.transparent,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: MdrrmoTypography.bodySm.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : palette.textSecondary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.55,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: palette.surfaceSubtle,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(color: palette.border),
+        ),
+        child: Row(
+          children: [
+            option(label: 'Driver', driverValue: true),
+            option(label: 'Responder', driverValue: false),
+          ],
+        ),
       ),
     );
   }
@@ -290,6 +368,9 @@ class _TeamAmbulanceSection extends StatelessWidget {
       'offline' => palette.textMuted,
       _ => palette.brand,
     };
+    final statusLabel = vehicle.status.isEmpty
+        ? 'Unknown'
+        : '${vehicle.status[0].toUpperCase()}${vehicle.status.substring(1)}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -306,33 +387,31 @@ class _TeamAmbulanceSection extends StatelessWidget {
                 color: palette.textMuted,
               ),
             ),
-            AppStatusBadge(
-              vehicle.status.toUpperCase(),
-              color: statusColor,
-              icon: AppIcons.ambulance,
-            ),
+            AppStatusBadge(statusLabel, color: statusColor, dot: true),
           ],
         ),
-        const SizedBox(height: AppSpacing.md),
+        const SizedBox(height: AppSpacing.sm + 2),
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-              child: SizedBox(
-                width: 68,
-                height: 52,
-                child: vehicle.photoUrl != null && vehicle.photoUrl!.isNotEmpty
-                    ? Image.network(
-                        vehicle.photoUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            const _AmbulancePlaceholder(),
-                      )
-                    : const _AmbulancePlaceholder(),
+            if (vehicle.photoUrl != null && vehicle.photoUrl!.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                child: SizedBox(
+                  width: 56,
+                  height: 44,
+                  child: Image.network(
+                    vehicle.photoUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const _AmbulanceThumb(),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(width: AppSpacing.md),
+              const SizedBox(width: AppSpacing.md),
+            ] else ...[
+              const _AmbulanceThumb(),
+              const SizedBox(width: AppSpacing.md),
+            ],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -347,7 +426,6 @@ class _TeamAmbulanceSection extends StatelessWidget {
                   Text(
                     'Plate No: ${vehicle.number}',
                     style: MdrrmoTypography.bodySm.copyWith(
-                      fontWeight: FontWeight.w600,
                       color: palette.textSecondary,
                     ),
                   ),
@@ -356,16 +434,6 @@ class _TeamAmbulanceSection extends StatelessWidget {
             ),
           ],
         ),
-        if (vehicle.hasMaintenanceWarning) ...[
-          const SizedBox(height: AppSpacing.md),
-          AppBanner(
-            tone: AppBannerTone.warning,
-            icon: AppIcons.alert,
-            message: vehicle.maintenanceWarning?.trim().isNotEmpty == true
-                ? vehicle.maintenanceWarning!
-                : 'This ambulance is currently marked for maintenance.',
-          ),
-        ],
         if (team.vehicles.length > 1) ...[
           const SizedBox(height: AppSpacing.md),
           DropdownButtonFormField<int>(
@@ -373,7 +441,7 @@ class _TeamAmbulanceSection extends StatelessWidget {
                 ? vehicle.id
                 : null,
             decoration: const InputDecoration(
-              labelText: 'Switch active ambulance',
+              labelText: 'Switch ambulance',
             ),
             isExpanded: true,
             items: [
@@ -382,7 +450,9 @@ class _TeamAmbulanceSection extends StatelessWidget {
                   value: item.id,
                   enabled: item.status != 'maintenance',
                   child: Text(
-                    '${item.displayName} (${item.number}) - ${item.status}',
+                    item.status == 'maintenance'
+                        ? '${item.displayName} (${item.number}) · Maintenance'
+                        : '${item.displayName} (${item.number})',
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -400,7 +470,6 @@ class _TeamAmbulanceSection extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           AppButton(
             label: 'Report maintenance',
-            icon: AppIcons.wrench,
             kind: AppButtonKind.outline,
             onPress: busy ? null : () => onReportMaintenance(vehicle.id),
           ),
@@ -410,23 +479,87 @@ class _TeamAmbulanceSection extends StatelessWidget {
   }
 }
 
-class _AmbulancePlaceholder extends StatelessWidget {
-  const _AmbulancePlaceholder();
+class _AmbulanceThumb extends StatelessWidget {
+  const _AmbulanceThumb();
 
   @override
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
     return Container(
+      width: 44,
+      height: 44,
       decoration: BoxDecoration(
         color: palette.brandTint,
-        border: Border.all(color: palette.brand.withValues(alpha: 0.25)),
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       alignment: Alignment.center,
       child: Icon(
         AppIcons.ambulance,
         color: palette.brand,
-        size: 24,
+        size: 20,
+      ),
+    );
+  }
+}
+
+class _MemberRow extends StatelessWidget {
+  const _MemberRow({
+    required this.member,
+    required this.onCall,
+  });
+
+  final TeamMember member;
+  final VoidCallback? onCall;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = MdrrmoColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
+      child: Row(
+        children: [
+          InitialsAvatar(
+            member.name,
+            online: member.online,
+            size: 40,
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  member.name,
+                  style: MdrrmoTypography.bodyMd.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: palette.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  '${member.role} · ${member.online ? 'Active' : 'Offline'}',
+                  style: MdrrmoTypography.bodySm.copyWith(
+                    color: member.online
+                        ? palette.success
+                        : palette.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (onCall != null)
+            IconButton.filledTonal(
+              style: IconButton.styleFrom(
+                minimumSize: const Size(44, 44),
+              ),
+              tooltip: 'Call ${member.name}',
+              onPressed: onCall,
+              icon: const Icon(AppIcons.phoneCall, size: 18),
+            ),
+        ],
       ),
     );
   }

@@ -5,8 +5,6 @@ import 'package:material_ui/material_ui.dart';
 import '../../state/resident_state.dart';
 import '../../ui/kit.dart';
 import '../../ui/logout_action.dart';
-import '../pending_submissions_screen.dart';
-import '../search_screen.dart';
 import 'history_screen.dart';
 import 'home_screen.dart';
 import 'notifications_screen.dart';
@@ -33,18 +31,7 @@ class _ResidentShellState extends State<ResidentShell> {
     );
   }
 
-  Widget _leadingIcon(IconData icon, Color tint) => Container(
-    width: 36,
-    height: 36,
-    decoration: BoxDecoration(
-      color: tint.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(AppRadius.sm),
-    ),
-    child: Icon(icon, size: 18, color: tint),
-  );
-
   Future<void> _menu(ResidentState state) async {
-    final palette = MdrrmoColors.of(context);
     final choice = await showAppSheet<int>(
       context,
       title: 'More options',
@@ -62,25 +49,10 @@ class _ResidentShellState extends State<ResidentShell> {
             AppSectionGroup(
               children: [
                 AppRowItem(
-                  leading: _leadingIcon(AppIcons.search, palette.brand),
-                  title: 'Search records',
-                  subtitle: 'Find past incidents and requests',
-                  showChevron: true,
-                  onTap: () => Navigator.pop(sheetCtx, 2),
-                ),
-                AppRowItem(
-                  leading: _leadingIcon(AppIcons.upload, palette.brand),
-                  title: 'Unconfirmed submissions',
-                  subtitle: 'Retry queued reports or inspect details',
-                  showChevron: true,
-                  onTap: () => Navigator.pop(sheetCtx, 3),
-                ),
-                AppRowItem(
-                  leading: _leadingIcon(AppIcons.refresh, palette.brand),
                   title: 'Refresh information',
                   subtitle: 'Reload latest updates now',
                   showChevron: true,
-                  onTap: () => Navigator.pop(sheetCtx, 4),
+                  onTap: () => Navigator.pop(sheetCtx, 1),
                 ),
               ],
             ),
@@ -88,11 +60,10 @@ class _ResidentShellState extends State<ResidentShell> {
             AppSectionGroup(
               children: [
                 AppRowItem(
-                  leading: _leadingIcon(AppIcons.logout, palette.danger),
                   destructive: true,
                   title: 'Log out',
                   subtitle: 'Sign out of this device',
-                  onTap: () => Navigator.pop(sheetCtx, 5),
+                  onTap: () => Navigator.pop(sheetCtx, 2),
                 ),
               ],
             ),
@@ -101,19 +72,14 @@ class _ResidentShellState extends State<ResidentShell> {
       ),
     );
     if (choice == null || !mounted) return;
-    if (choice == 4) {
+    if (choice == 1) {
       await state.load();
       return;
     }
-    if (choice == 5) {
+    if (choice == 2) {
       await logoutFrom(context);
       return;
     }
-    final page = switch (choice) {
-      2 => const SearchScreen(),
-      _ => PendingSubmissionsScreen(onRecovered: state.load),
-    };
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
   }
 
   @override

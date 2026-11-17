@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import '../data/api/driver_service.api.dart';
+import '../data/hospital.dart';
 import '../data/models.dart';
 import '../data/paged_records.dart';
 import '../data/input_validation.dart';
@@ -36,6 +37,7 @@ class ResponderState extends ChangeNotifier {
   Object? actionError;
   bool _isDisposed = false;
   bool _loading = false;
+  bool _pendingReload = false;
   bool hasLoaded = false;
   String? submittedReference;
   List<DriverVehicle> vehicles = [];
@@ -45,8 +47,21 @@ class ResponderState extends ChangeNotifier {
   bool _expandedHistory = false;
   Object? historyError;
 
+  int _dispatchTabRequests = 0;
+  int get dispatchTabRequests => _dispatchTabRequests;
+
+  void requestDispatchTab() {
+    _dispatchTabRequests++;
+    _notify();
+  }
+
   Future<void> load() async {
-    if (_loading || isSaving || _isDisposed) return;
+    if (_isDisposed) return;
+    if (_loading || isSaving) {
+      _pendingReload = true;
+      return;
+    }
+    _pendingReload = false;
     _loading = true;
     isLoading = true;
     loadError = null;
@@ -153,11 +168,41 @@ class ResponderState extends ChangeNotifier {
       if (!_isDisposed) {
         isLoading = false;
         _notify();
+        if (_pendingReload && !isSaving) {
+          _pendingReload = false;
+          unawaited(load());
+        }
       }
     }
   }
 
-  Future<void> advanceAssignment() async {
+  Assignment? assignmentById(int reportId) =>
+      assignments.where((item) => item.id == reportId).firstOrNull;
+
+  Future<bool> advanceAssignmentFor(
+    int reportId, {
+    required int expectedStep,
+    int? hospitalId,
+    String? destination,
+  }) async {
+    final target = assignmentById(reportId);
+    if (!canDispatch ||
+        _isDisposed ||
+        target == null ||
+        target.step != expectedStep ||
+        isSaving ||
+        _loading ||
+        loadError != null) {
+      return false;
+    }
+    selectAssignment(reportId);
+    await advanceAssignment(hospitalId: hospitalId, destination: destination);
+    if (_isDisposed) return false;
+    final after = assignmentById(reportId);
+    return after == null || after.step != expectedStep;
+  }
+
+  Future<void> advanceAssignment({int? hospitalId, String? destination}) async {
     final activeAssignment = assignment;
     if (!canDispatch ||
         _isDisposed ||
@@ -171,13 +216,18 @@ class ResponderState extends ChangeNotifier {
     final nextStatus = switch (activeAssignment.step) {
       0 => 'en-route',
       1 => 'on-scene',
-      _ => 'available',
+      2 => 'transporting',
+      _ => 'arrived',
     };
     await _runAction(() async {
-      final updated = await _api.updateAssignmentStatus(
-        activeAssignment.id,
-        nextStatus,
-      );
+      final updated = (hospitalId == null && destination == null)
+          ? await _api.updateAssignmentStatus(activeAssignment.id, nextStatus)
+          : await _api.updateAssignmentStage(
+              activeAssignment.id,
+              nextStatus,
+              hospitalId: hospitalId,
+              destination: destination,
+            );
       if (_isDisposed) return;
       if (updated == null) {
         assignments.removeWhere((item) => item.id == activeAssignment.id);
@@ -216,6 +266,33 @@ class ResponderState extends ChangeNotifier {
         profile.status = _labelFromAvailability(availability);
       }
     });
+  }
+
+  Future<List<HospitalRecommendation>> markHospitalUnavailable(
+    int reportId,
+    int hospitalId,
+  ) async {
+    if (!canDispatch || _isDisposed || isSaving || _loading || loadError != null) {
+      return const [];
+    }
+    List<HospitalRecommendation> nextHospitals = const [];
+    await _runAction(() async {
+      final result = await _api.markHospitalUnavailable(reportId, hospitalId);
+      if (_isDisposed) return;
+      nextHospitals = result.hospitals;
+      final updated = result.assignment;
+      if (updated != null) {
+        final nextAssignment = Assignment.fromJson(updated);
+        if (assignment?.id == nextAssignment.id) {
+          assignment = nextAssignment;
+        }
+        assignments = [
+          for (final a in assignments)
+            if (a.id == nextAssignment.id) nextAssignment else a,
+        ];
+      }
+    });
+    return nextHospitals;
   }
 
   Future<void> setAvailability(Availability value) async {
@@ -371,6 +448,10 @@ class ResponderState extends ChangeNotifier {
     } finally {
       isSaving = false;
       _notify();
+      if (_pendingReload && !_loading && !_isDisposed) {
+        _pendingReload = false;
+        unawaited(load());
+      }
     }
   }
 
@@ -531,4 +612,7 @@ class ResponderScope extends InheritedNotifier<ResponderState> {
 
   static ResponderState of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<ResponderScope>()!.notifier!;
+
+  static ResponderState? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ResponderScope>()?.notifier;
 }

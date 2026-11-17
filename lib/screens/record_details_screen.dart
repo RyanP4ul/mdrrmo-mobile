@@ -5,12 +5,10 @@ import '../data/api_client.dart';
 import '../data/input_validation.dart';
 import '../data/resident_models.dart';
 import '../services/route_navigation.dart';
-import '../state/driver_responder_state.dart';
 import '../ui/data_refresh.dart';
 import '../ui/kit.dart';
 import '../ui/record_widgets.dart';
-import 'driver-responder/driver_form_screen.dart';
-import 'voice_calls_screen.dart';
+import '../widgets/res_widgets.dart';
 
 /// Fetches an authorized record when opened, including from older notifications.
 class RecordDetailsScreen extends StatefulWidget {
@@ -251,55 +249,41 @@ class _RecordDetailsScreenState extends State<RecordDetailsScreen> {
                       const SizedBox(height: AppSpacing.md),
                     ],
                     if (r != null) ...[
-                      RecordOverview(
-                        reference:
-                            '${r['reference'] ?? '${widget.schedule ? 'Schedule' : 'Report'} #${widget.id}'}',
-                        title:
-                            '${widget.schedule ? r['service_type'] ?? 'Scheduled service' : r['type'] ?? 'Emergency report'}',
-                        status: '${r['status'] ?? 'Unknown'}',
-                        priority: widget.schedule
-                            ? null
-                            : r['priority']?.toString(),
-                        icon: widget.schedule
-                            ? AppIcons.calendar
-                            : AppIcons.alert,
-                        color: palette.brand,
-                        subtitle: widget.schedule
-                            ? 'Service booking and response updates.'
-                            : 'Incident information and response updates.',
+                      Builder(
+                        builder: (context) {
+                          final rawStatus = '${r['status'] ?? 'Unknown'}';
+                          final residentBadge = !widget.driver
+                              ? residentStatusPresentation(
+                                  rawStatus,
+                                  palette,
+                                  schedule: widget.schedule,
+                                )
+                              : null;
+                          final overviewSubtitle = widget.driver
+                              ? _driverStatusSummary(
+                                  rawStatus,
+                                  schedule: widget.schedule,
+                                )
+                              : _residentStatusSummary(
+                                  rawStatus,
+                                  schedule: widget.schedule,
+                                );
+                          return RecordOverview(
+                            reference:
+                                '${r['reference'] ?? '${widget.schedule ? 'Schedule' : 'Report'} #${widget.id}'}',
+                            title:
+                                '${widget.schedule ? r['service_type'] ?? 'Scheduled service' : r['type'] ?? 'Emergency report'}',
+                            status: rawStatus,
+                            statusLabel: residentBadge?.$1,
+                            statusColor: residentBadge?.$2,
+                            subtitle: overviewSubtitle,
+                            priority: widget.schedule || !widget.driver
+                                ? null
+                                : r['priority']?.toString(),
+                            color: palette.brand,
+                          );
+                        },
                       ),
-                      if (!widget.schedule)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                          child: AppButton(
-                            label: 'Voice call invitations',
-                            icon: AppIcons.phone,
-                            kind: AppButtonKind.outline,
-                            onPress: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    VoiceCallsScreen(autoJoin: !widget.driver),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (r['can_edit'] == true ||
-                          (widget.driver &&
-                              widget.schedule &&
-                              [
-                                'confirmed',
-                                'en-route',
-                                'on-scene',
-                              ].contains(r['status'])))
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                          child: Text(
-                            'Available actions',
-                            style: MdrrmoTypography.titleMd.copyWith(
-                              color: palette.textPrimary,
-                            ),
-                          ),
-                        ),
                       if (widget.driver &&
                           widget.schedule &&
                           [
@@ -307,18 +291,6 @@ class _RecordDetailsScreenState extends State<RecordDetailsScreen> {
                             'en-route',
                             'on-scene',
                           ].contains(r['status'])) ...[
-                        AppButton(
-                          label: 'Navigate to destination',
-                          icon: AppIcons.navigation,
-                          kind: AppButtonKind.outline,
-                          onPress: _busy
-                              ? null
-                              : () => navigateToDestination(
-                                  context,
-                                  address: '${r['address'] ?? ''}',
-                                ),
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
                         AppButton(
                           label: switch (r['status']) {
                             'confirmed' => 'Start service trip',
@@ -351,211 +323,118 @@ class _RecordDetailsScreenState extends State<RecordDetailsScreen> {
                                 },
                         ),
                         const SizedBox(height: AppSpacing.sm),
-                      ],
-                      if (r['can_edit'] == true) ...[
-                        if (widget.driver || widget.schedule)
-                          AppButton(
-                            label: 'Edit',
-                            icon: AppIcons.edit,
-                            onPress: _busy ? null : _edit,
-                          ),
-                        if (!widget.schedule) ...[
-                          const SizedBox(height: AppSpacing.sm),
-                          TextButton(
-                            style: TextButton.styleFrom(
-                              minimumSize: const Size(0, 48),
-                            ),
-                            onPressed: _busy ? null : _withdraw,
-                            child: const Text('Withdraw pending report'),
-                          ),
-                        ],
-                      ],
-                      if (!widget.driver &&
-                          widget.schedule &&
-                          [
-                            'pending',
-                            'acknowledged',
-                            'confirmed',
-                          ].contains(r['status']))
-                        TextButton(
-                          style: TextButton.styleFrom(
-                            minimumSize: const Size(0, 48),
-                            foregroundColor: palette.danger,
-                          ),
-                          onPressed: _busy
+                        AppButton(
+                          label: r['status'] == 'on-scene'
+                              ? 'Navigate to destination'
+                              : 'Navigate to pickup',
+                          icon: AppIcons.navigation,
+                          kind: AppButtonKind.outline,
+                          onPress: _busy
                               ? null
                               : () async {
-                                  final confirm = await confirmDialog(
-                                    context,
-                                    title: 'Cancel this request?',
-                                    body: 'This cancels your scheduled assistance request with MDRRMO.',
-                                    confirmLabel: 'Cancel request',
-                                    destructive: true,
+                                  final navInfo = scheduleNavFromRecord(
+                                    r,
+                                    onStatusUpdated: () async {
+                                      await widget.onChanged?.call();
+                                      if (mounted) await _load();
+                                    },
                                   );
-                                  if (confirm) {
-                                    await _action(() async {
-                                      await dio.patch(
-                                        '$_path/cancel',
-                                        cancelToken: _cancel,
-                                      );
-                                    });
-                                  }
+                                  await navigateToDestination(
+                                    context,
+                                    address: r['status'] == 'on-scene' &&
+                                            (navInfo?.destinationAddress
+                                                    .isNotEmpty ??
+                                                false)
+                                        ? navInfo!.destinationAddress
+                                        : '${r['pickup_address'] ?? r['address'] ?? ''}',
+                                    schedule: navInfo,
+                                  );
                                 },
-                          child: const Text('Cancel schedule'),
                         ),
-                      const SizedBox(height: AppSpacing.lg),
+                        const SizedBox(height: AppSpacing.md),
+                      ],
                       _RecordInformation(
                         record: r,
                         schedule: widget.schedule,
                         driver: widget.driver,
                       ),
+                      if ((r['can_edit'] == true &&
+                              (widget.driver || widget.schedule)) ||
+                          (r['can_edit'] == true && !widget.schedule) ||
+                          (!widget.driver &&
+                              widget.schedule &&
+                              [
+                                'pending',
+                                'acknowledged',
+                                'confirmed',
+                              ].contains(r['status']))) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        AppSectionGroup(
+                          children: [
+                            if (r['can_edit'] == true &&
+                                (widget.driver || widget.schedule))
+                              AppRowItem(
+                                title: widget.driver ? 'Edit' : 'Edit request',
+                                subtitle: widget.schedule
+                                    ? 'Update preferred date, time, or notes'
+                                    : 'Update incident details',
+                                showChevron: true,
+                                enabled: !_busy,
+                                onTap: _busy ? null : _edit,
+                              ),
+                            if (r['can_edit'] == true && !widget.schedule)
+                              AppRowItem(
+                                title: widget.driver
+                                    ? 'Withdraw pending report'
+                                    : 'Cancel pending report',
+                                destructive: true,
+                                enabled: !_busy,
+                                onTap: _busy ? null : _withdraw,
+                              ),
+                            if (!widget.driver &&
+                                widget.schedule &&
+                                [
+                                  'pending',
+                                  'acknowledged',
+                                  'confirmed',
+                                ].contains(r['status']))
+                              AppRowItem(
+                                title: 'Cancel request',
+                                destructive: true,
+                                enabled: !_busy,
+                                onTap: _busy
+                                    ? null
+                                    : () async {
+                                        final confirm = await confirmDialog(
+                                          context,
+                                          title: 'Cancel this request?',
+                                          body:
+                                              'This cancels your scheduled assistance request with MDRRMO.',
+                                          confirmLabel: 'Cancel request',
+                                          destructive: true,
+                                        );
+                                        if (confirm) {
+                                          await _action(() async {
+                                            await dio.patch(
+                                              '$_path/cancel',
+                                              cancelToken: _cancel,
+                                            );
+                                          });
+                                        }
+                                      },
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                      ],
                       if (r['can_care'] == true ||
                           r['can_edit_trip'] == true ||
-                          r['can_fill_patient_form'] == true) ...[
+                          r['can_fill_patient_form'] == true)
                         TripSummary(
                           trip: r['trip'] is Map
                               ? Map<String, dynamic>.from(r['trip'] as Map)
                               : null,
                         ),
-                        if ((r['can_edit_trip'] ?? r['can_care']) == true) ...[
-                          AppButton(
-                            label: 'Edit trip record',
-                            icon: AppIcons.route,
-                            onPress: _busy
-                                ? null
-                                : () async {
-                                    final trip = Map<String, dynamic>.from(
-                                      (r['trip'] as Map?) ?? {},
-                                    );
-                                    final saved = await Navigator.of(context)
-                                        .push<bool>(
-                                          MaterialPageRoute(
-                                            builder: (_) => ApiEditScreen(
-                                              title: 'Trip record',
-                                              fields: const [
-                                                EditField(
-                                                  'destination',
-                                                  'Actual destination',
-                                                  max: 255,
-                                                ),
-                                                EditField(
-                                                  'picked_up_at',
-                                                  'Pickup time (ISO date/time with timezone)',
-                                                  required: false,
-                                                  timestamp: true,
-                                                ),
-                                                EditField(
-                                                  'arrived_at',
-                                                  'Arrival time (ISO date/time with timezone)',
-                                                  required: false,
-                                                  timestamp: true,
-                                                ),
-                                                EditField(
-                                                  'distance_km',
-                                                  'Driver-reported distance (km)',
-                                                  required: false,
-                                                  numeric: true,
-                                                ),
-                                              ],
-                                              initial: trip,
-                                              notice: 'Record actual patient pickup and destination arrival. On-scene time is separate. Distance is manually reported; GPS tracking is not enabled.',
-                                              save: (values) async {
-                                                for (final field in [
-                                                  'picked_up_at',
-                                                  'arrived_at',
-                                                ]) {
-                                                  final value =
-                                                      values[field]
-                                                          ?.toString() ??
-                                                      '';
-                                                  values[field] = value.isEmpty
-                                                      ? null
-                                                      : DateTime.parse(value)
-                                                            .toUtc()
-                                                            .toIso8601String();
-                                                }
-                                                final distance =
-                                                    values['distance_km']
-                                                        ?.toString() ??
-                                                    '';
-                                                values['distance_km'] =
-                                                    distance.isEmpty
-                                                    ? null
-                                                    : double.parse(distance);
-                                                await dio.put(
-                                                  '$_path/trip',
-                                                  data: values,
-                                                  cancelToken: _cancel,
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                        );
-                                    if (saved == true && mounted) await _load();
-                                  },
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                        ],
-                        if ((r['can_fill_patient_form'] ?? r['can_care']) ==
-                            true) ...[
-                          AppButton(
-                            label: 'Driver Form',
-                            icon: AppIcons.car,
-                            onPress: _busy
-                                ? null
-                                : () async {
-                                    final responderScope = context
-                                        .getInheritedWidgetOfExactType<
-                                          ResponderScope
-                                        >();
-                                    final state = responderScope?.notifier;
-                                    final saved = await Navigator.of(context)
-                                        .push<bool>(
-                                          MaterialPageRoute(
-                                            builder: (_) {
-                                              final form = DriverFormScreen(
-                                                initialReportId: widget.id,
-                                                initialRecord: r,
-                                              );
-                                              return state == null
-                                                  ? form
-                                                  : ResponderScope(
-                                                      state: state,
-                                                      child: form,
-                                                    );
-                                            },
-                                          ),
-                                        );
-                                    if (saved == true && mounted) await _load();
-                                  },
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          AppButton(
-                            label: 'Patient-care form',
-                            icon: AppIcons.stethoscope,
-                            onPress: _busy
-                                ? null
-                                : () async {
-                                    await Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) => PatientCareScreen(
-                                          reportId: widget.id,
-                                        ),
-                                      ),
-                                    );
-                                    if (mounted) await _load();
-                                  },
-                          ),
-                        ],
-                      ],
-                      const SizedBox(height: AppSpacing.md),
-                      TextButton(
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(0, 48),
-                        ),
-                        onPressed: _busy ? null : _load,
-                        child: const Text('Refresh record'),
-                      ),
                     ],
                   ],
                 ),
@@ -566,6 +445,39 @@ class _RecordDetailsScreenState extends State<RecordDetailsScreen> {
       ),
     );
   }
+}
+
+String _driverStatusSummary(String rawStatus, {required bool schedule}) {
+  return switch (rawStatus.toLowerCase()) {
+    'pending' => 'Waiting for review or assignment.',
+    'dispatched' => 'Assigned for emergency response.',
+    'acknowledged' || 'confirmed' => schedule
+        ? 'Confirmed schedule ready to start.'
+        : 'Dispatch acknowledged.',
+    'en-route' => 'Team is en route to the location.',
+    'on-scene' => 'Team is currently on scene.',
+    'resolved' || 'completed' => 'Completed and archived.',
+    'withdrawn' || 'cancelled' || 'declined' || 'invalid' => 'Closed record.',
+    _ => 'Record status details are listed below.',
+  };
+}
+
+String _residentStatusSummary(String rawStatus, {required bool schedule}) {
+  return switch (rawStatus.toLowerCase()) {
+    'pending' => schedule
+        ? 'MDRRMO has received your request and is reviewing the schedule.'
+        : 'MDRRMO has received your report and is reviewing it now.',
+    'dispatched' ||
+    'acknowledged' ||
+    'confirmed' ||
+    'en-route' ||
+    'on-scene' =>
+      'A response team is assigned. See team details and live progress below.',
+    'resolved' || 'completed' => 'This response has been completed.',
+    'withdrawn' || 'cancelled' => 'This request was cancelled.',
+    'declined' || 'invalid' => 'Closed by MDRRMO.',
+    _ => 'Updates from MDRRMO appear below.',
+  };
 }
 
 class _RecordInformation extends StatelessWidget {
@@ -580,17 +492,18 @@ class _RecordInformation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = MdrrmoColors.of(context);
     final r = record;
     final activity = <String, dynamic>{
-      if (!schedule) 'Reported': r['reported_at'],
-      'Acknowledged': r['acknowledged_at'],
+      if (!schedule) driver ? 'Reported' : 'Submitted': r['reported_at'],
+      driver ? 'Acknowledged' : 'Received by MDRRMO': r['acknowledged_at'],
       if (schedule) ...{
-        'Trip started': r['started_at'],
-        'On scene': r['arrived_at'],
+        driver ? 'Trip started' : 'Team on the way': r['started_at'],
+        driver ? 'On scene' : 'Team on site': r['arrived_at'],
         'Completed': r['completed_at'],
       } else ...{
-        'Resolved': r['resolved_at'],
-        'Withdrawn': r['withdrawn_at'],
+        driver ? 'Resolved' : 'Completed': r['resolved_at'],
+        driver ? 'Withdrawn' : 'Cancelled': r['withdrawn_at'],
       },
     }..removeWhere((_, value) => value == null || '$value'.isEmpty);
 
@@ -598,106 +511,159 @@ class _RecordInformation extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         DetailSection(
-          title: schedule ? 'Service location' : 'Incident details',
-          icon: AppIcons.pin,
+          title: schedule ? 'Service details' : 'Incident details',
           children: [
             DetailField(
-              schedule ? 'Destination' : 'Location',
-              schedule ? r['address'] : r['location'],
-              icon: AppIcons.pin,
+              schedule ? 'Pickup address' : 'Location',
+              schedule ? (r['pickup_address'] ?? r['address']) : r['location'],
             ),
+            if (schedule && extractScheduleDestination(r).isNotEmpty)
+              DetailField('Destination', extractScheduleDestination(r)),
+            if (schedule) ...[
+              DetailField(
+                'Preferred date & time',
+                '${recordTimestamp(r['preferred_date'], dateOnly: true)} · ${recordTime(r['preferred_time'])}',
+              ),
+            ],
             DetailField(
               schedule ? 'Notes' : 'Description',
               schedule ? r['notes'] : r['description'],
-              icon: AppIcons.form,
               fallback: schedule
                   ? 'No additional notes provided.'
                   : 'No description recorded.',
             ),
             if (r['decline_reason'] != null)
-              DetailField(
-                'Decline reason',
-                r['decline_reason'],
-                icon: AppIcons.infoCircle,
-              ),
+              DetailField('Decline reason', r['decline_reason']),
             if (r['withdrawal_reason'] != null)
-              DetailField(
-                'Withdrawal reason',
-                r['withdrawal_reason'],
-                icon: AppIcons.infoCircle,
-              ),
+              DetailField('Withdrawal reason', r['withdrawal_reason']),
           ],
         ),
-        if (schedule)
-          DetailSection(
-            title: 'Service schedule',
-            icon: AppIcons.calendar,
-            children: [
-              DetailField(
-                'Date',
-                recordTimestamp(r['preferred_date'], dateOnly: true),
-                icon: AppIcons.calendar,
-              ),
-              DetailField(
-                'Time',
-                recordTime(r['preferred_time']),
-                icon: AppIcons.clock,
-              ),
-            ],
-          ),
         DetailSection(
           title: 'Response team',
-          icon: AppIcons.users,
           children: [
             DetailField(
               'Assigned team',
               schedule ? r['team_name'] : r['team'],
-              icon: AppIcons.safety,
               fallback: 'Awaiting team assignment',
             ),
             if (!schedule)
               DetailField(
                 'Assigned responder',
                 r['driver'],
-                icon: AppIcons.user,
                 fallback: 'Awaiting responder assignment',
               ),
             if (schedule && r['resident'] != null)
-              DetailField('Resident', r['resident'], icon: AppIcons.user),
+              DetailField('Resident', r['resident']),
             if (schedule && r['contact'] != null)
-              DetailField(
-                'Resident contact',
-                r['contact'],
-                icon: AppIcons.phone,
-              ),
+              DetailField('Resident contact', r['contact']),
           ],
         ),
         if (activity.isNotEmpty)
-          DetailSection(
-            title: 'Activity timeline',
-            icon: AppIcons.history,
-            children: [
-              for (final event in activity.entries)
-                DetailField(
-                  event.key,
-                  recordTimestamp(event.value),
-                  icon: AppIcons.checkCircle,
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(2, 0, 2, AppSpacing.sm),
+                  child: Text(
+                    'Activity timeline',
+                    style: MdrrmoTypography.titleMd.copyWith(
+                      color: palette.textPrimary,
+                    ),
+                  ),
                 ),
-            ],
+                Surface(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg,
+                    vertical: AppSpacing.md,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < activity.length; i++) ...[
+                        Builder(
+                          builder: (context) {
+                            final entry = activity.entries.elementAt(i);
+                            final isLast = i == activity.length - 1;
+                            final dotColor =
+                                entry.key == 'Completed' ||
+                                    entry.key == 'Resolved'
+                                ? palette.success
+                                : palette.brand;
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(
+                                  width: 18,
+                                  child: Column(
+                                    children: [
+                                      const SizedBox(height: 5),
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          color: isLast
+                                              ? dotColor
+                                              : palette.borderStrong,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: AppSpacing.sm),
+                                Expanded(
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      bottom: isLast ? 0 : AppSpacing.md,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          entry.key,
+                                          style: MdrrmoTypography.bodyMd
+                                              .copyWith(
+                                                color: palette.textPrimary,
+                                                fontWeight: isLast
+                                                    ? FontWeight.w600
+                                                    : FontWeight.w500,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          recordTimestamp(entry.value),
+                                          style: MdrrmoTypography.tabular(
+                                            MdrrmoTypography.bodySm.copyWith(
+                                              color: palette.textSecondary,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         if (driver &&
             r['submitted_patient'] is Map &&
             (r['submitted_patient'] as Map).isNotEmpty)
           DetailSection(
             title: 'Submitted patient information',
-            icon: AppIcons.stethoscope,
             children: [
               for (final entry in (r['submitted_patient'] as Map).entries)
-                DetailField(
-                  readableLabel(entry.key),
-                  entry.value,
-                  icon: AppIcons.user,
-                ),
+                DetailField(readableLabel(entry.key), entry.value),
             ],
           ),
         if (driver &&
@@ -707,73 +673,56 @@ class _RecordInformation extends StatelessWidget {
             ))
           DetailSection(
             title: 'Driver Form (Authorization & Fuel)',
-            icon: AppIcons.car,
             children: [
-              DetailField(
-                'Trip Date',
-                (r['driver_form'] as Map)['tripDate'],
-                icon: AppIcons.calendar,
-              ),
+              DetailField('Trip Date', (r['driver_form'] as Map)['tripDate']),
               DetailField(
                 'Assigned Driver',
                 (r['driver_form'] as Map)['driverName'],
-                icon: AppIcons.user,
               ),
               DetailField(
                 'Government Vehicle',
                 (r['driver_form'] as Map)['governmentCardPlateNo'],
-                icon: AppIcons.car,
               ),
               DetailField(
                 'Authorized Passenger',
                 (r['driver_form'] as Map)['authorizedPassenger'] ??
                     (r['driver_form'] as Map)['passengerName'],
-                icon: AppIcons.users,
               ),
               DetailField(
                 'Destination / Place to Visit',
                 (r['driver_form'] as Map)['placeVisitedInspected'],
-                icon: AppIcons.pin,
               ),
               DetailField(
                 'Purpose of Trip',
                 (r['driver_form'] as Map)['purpose'],
-                icon: AppIcons.fileCheck,
               ),
               DetailField(
                 'Balance in Tank (L)',
                 (r['driver_form'] as Map)['balanceInTank'],
-                icon: AppIcons.info,
               ),
               DetailField(
                 'Issued by Office (L)',
                 (r['driver_form'] as Map)['issuedByOffice'],
-                icon: AppIcons.info,
               ),
               DetailField(
                 'Purchased During Trip (L)',
                 (r['driver_form'] as Map)['purchasedDuringTrip'],
-                icon: AppIcons.info,
               ),
               DetailField(
                 'Total Available Fuel (L)',
                 (r['driver_form'] as Map)['totalAvailableFuel'],
-                icon: AppIcons.info,
               ),
               DetailField(
                 'Fuel Used During Trip (L)',
                 (r['driver_form'] as Map)['fuelUsedDuringTrip'],
-                icon: AppIcons.info,
               ),
               DetailField(
                 'Remaining Fuel (L)',
                 (r['driver_form'] as Map)['remainingFuel'],
-                icon: AppIcons.info,
               ),
               DetailField(
                 'Gear Oil Used (L)',
                 (r['driver_form'] as Map)['gearOilUsed'],
-                icon: AppIcons.wrench,
               ),
             ],
           ),
@@ -793,16 +742,14 @@ class TripSummary extends StatelessWidget {
       return const RecordMessage(
         title: 'Trip record',
         message: 'No trip information recorded.',
-        icon: AppIcons.route,
       );
     }
     final pickup = DateTime.tryParse('${t['picked_up_at']}');
     final arrival = DateTime.tryParse('${t['arrived_at']}');
     return DetailSection(
       title: 'Trip record',
-      icon: AppIcons.route,
       children: [
-        DetailField('Destination', t['destination'], icon: AppIcons.pin),
+        DetailField('Destination', t['destination']),
         for (final entry in {
           'Started': t['started_at'],
           'On scene': t['on_scene_at'],
@@ -812,19 +759,16 @@ class TripSummary extends StatelessWidget {
           DetailField(
             entry.key,
             recordTimestamp(entry.value),
-            icon: AppIcons.clock,
           ),
         DetailField(
           'Driver-reported distance',
           t['distance_km'] == null ? null : '${t['distance_km']} km',
-          icon: AppIcons.route,
         ),
         DetailField(
           'Transport duration',
           pickup == null || arrival == null || arrival.isBefore(pickup)
               ? null
               : '${arrival.difference(pickup).inMinutes} minutes',
-          icon: AppIcons.clock,
         ),
       ],
     );

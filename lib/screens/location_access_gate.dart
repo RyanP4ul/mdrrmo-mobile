@@ -224,17 +224,27 @@ class _LocationAccessGateState extends State<LocationAccessGate>
     if (_access == MapLocationAccess.ready) {
       return MapLocationScope(position: _position, child: widget.child);
     }
-    if (_access == MapLocationAccess.checking) {
-      return const Center(child: CircularProgressIndicator());
-    }
     final palette = MdrrmoColors.of(context);
+    if (_access == MapLocationAccess.checking) {
+      return Scaffold(
+        backgroundColor: palette.canvas,
+        body: SafeArea(
+          child: Center(
+            child: CircularProgressIndicator(color: palette.brand),
+          ),
+        ),
+      );
+    }
     final serviceEnabled =
         _access != MapLocationAccess.disabled &&
         _access != MapLocationAccess.error;
 
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl),
+    return Scaffold(
+      backgroundColor: palette.canvas,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpacing.xl),
         child: ContentFrame(
           child: Surface(
             padding: const EdgeInsets.all(AppSpacing.xl),
@@ -364,6 +374,8 @@ class _LocationAccessGateState extends State<LocationAccessGate>
             ),
           ),
         ),
+      ),
+      ),
       ),
     );
   }

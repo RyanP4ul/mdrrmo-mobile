@@ -7,6 +7,7 @@ import 'package:forui/forui.dart';
 import '../data/models.dart';
 import '../data/input_validation.dart';
 import 'app_theme.dart';
+import 'components.dart';
 export '../data/api_errors.dart';
 export 'app_theme.dart';
 export 'components.dart';
@@ -496,40 +497,12 @@ class Pill extends StatelessWidget {
   final IconData? icon;
 
   @override
-  Widget build(BuildContext context) {
-    final palette = MdrrmoColors.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: palette.isDark ? 0.20 : 0.10),
-        borderRadius: BorderRadius.circular(AppRadius.xs),
-        border: Border.all(
-          color: color.withValues(alpha: palette.isDark ? 0.40 : 0.26),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 12, color: color),
-            const SizedBox(width: 4),
-          ],
-          Flexible(
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              softWrap: true,
-              style: MdrrmoTypography.labelSm.copyWith(
-                color: color,
-                fontWeight: FontWeight.w700,
-                height: 1.2,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AppStatusBadge(
+    label,
+    color: color,
+    dot: icon == null,
+    icon: icon,
+  );
 }
 
 class InitialsAvatar extends StatelessWidget {

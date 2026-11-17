@@ -110,13 +110,51 @@ class DriverApi {
     return _items(response.data).map(HospitalRecommendation.fromJson).toList();
   }
 
+  Future<
+    ({
+      Map<String, dynamic>? assignment,
+      List<HospitalRecommendation> hospitals,
+    })
+  >
+  markHospitalUnavailable(int reportId, int hospitalId) async {
+    final response = await _client.post(
+      '/driver-responder/assignments/$reportId/hospitals/$hospitalId/unavailable',
+      cancelToken: _requests,
+    );
+    final data = response.data;
+    if (data is! Map) {
+      throw const FormatException('Invalid hospital update response.');
+    }
+    final assignment = data['assignment'];
+    final hospitals = _items(
+      data,
+    ).map(HospitalRecommendation.fromJson).toList();
+    return (
+      assignment: assignment is Map
+          ? Map<String, dynamic>.from(assignment)
+          : null,
+      hospitals: hospitals,
+    );
+  }
+
   Future<Map<String, dynamic>?> updateAssignmentStatus(
     int reportId,
     String status,
-  ) async {
+  ) => updateAssignmentStage(reportId, status);
+
+  Future<Map<String, dynamic>?> updateAssignmentStage(
+    int reportId,
+    String status, {
+    int? hospitalId,
+    String? destination,
+  }) async {
     final response = await _client.patch(
       '/driver-responder/assignments/$reportId/status',
-      data: {'response_status': status},
+      data: {
+        'response_status': status,
+        'hospital_id': ?hospitalId,
+        'destination': ?destination,
+      },
       cancelToken: _requests,
     );
     final data = response.data;

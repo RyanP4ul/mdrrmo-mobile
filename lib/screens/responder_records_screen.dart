@@ -239,10 +239,10 @@ class _ResponderRecordsScreenState extends State<ResponderRecordsScreen> {
                   children: [
                     if (widget.inbox)
                       NotificationsHeaderSection(
-                        title: 'Your response updates',
+                        title: 'Notifications',
                         subtitle: unreadCount == 0
-                            ? 'Assignments, scheduled services, and team updates.'
-                            : '$unreadCount unread update${unreadCount == 1 ? '' : 's'} from MDRRMO.',
+                            ? null
+                            : '$unreadCount unread',
                         unreadOnly: _unreadOnly,
                         unreadCount: unreadCount,
                         onFilterChanged: (value) =>
@@ -252,10 +252,7 @@ class _ResponderRecordsScreenState extends State<ResponderRecordsScreen> {
                             : _markAllRead,
                       )
                     else
-                      ResponderHeading(
-                        'Your submitted reports',
-                        subtitle: 'Track the incidents you reported to MDRRMO.',
-                      ),
+                      const ResponderHeading('Your submitted reports'),
                     if (_loading && _items.isEmpty)
                       const Padding(
                         padding: EdgeInsets.only(bottom: AppSpacing.md),
@@ -287,36 +284,39 @@ class _ResponderRecordsScreenState extends State<ResponderRecordsScreen> {
                   ],
                 ),
               ),
-              if (widget.inbox)
-                for (final item in visible)
-                  ContentFrame(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Builder(
-                        builder: (context) {
-                          final (icon, color) = _inboxLook(item, palette);
-                          final hasDetails =
-                              (item['schedule_id'] ?? item['report_id']) !=
-                              null;
-                          return NotificationUpdateTile(
-                            title: '${item['title'] ?? 'Assignment update'}',
-                            message:
-                                '${item['message'] ?? 'No additional details.'}',
-                            timestampText: _inboxTimestamp(item['created_at']),
-                            icon: icon,
-                            iconColor: color,
-                            unread: item['read_at'] == null,
-                            hasDetails: hasDetails,
-                            opening: _openingId == item['id'],
-                            onTap: _openingId == null && !_markingAll
-                                ? () => _open(item)
-                                : null,
-                          );
-                        },
-                      ),
-                    ),
-                  )
-              else
+              if (widget.inbox && visible.isNotEmpty)
+                ContentFrame(
+                  child: AppSectionGroup(
+                    children: [
+                      for (final item in visible)
+                        Builder(
+                          builder: (context) {
+                            final (icon, color) = _inboxLook(item, palette);
+                            final hasDetails =
+                                (item['schedule_id'] ?? item['report_id']) !=
+                                null;
+                            return NotificationUpdateTile(
+                              title: '${item['title'] ?? 'Assignment update'}',
+                              message:
+                                  '${item['message'] ?? 'No additional details.'}',
+                              timestampText: _inboxTimestamp(
+                                item['created_at'],
+                              ),
+                              icon: icon,
+                              iconColor: color,
+                              unread: item['read_at'] == null,
+                              hasDetails: hasDetails,
+                              opening: _openingId == item['id'],
+                              onTap: _openingId == null && !_markingAll
+                                  ? () => _open(item)
+                                  : null,
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                )
+              else if (!widget.inbox)
                 for (final group in groups.entries) ...[
                   ContentFrame(
                     child: Padding(

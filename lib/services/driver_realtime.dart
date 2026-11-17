@@ -50,6 +50,8 @@ class DriverRealtime extends ChangeNotifier with WidgetsBindingObserver {
   final Future<void> Function()? onAssignmentChanged;
   final Map<int, Map<String, dynamic>> _fleet = {};
   final Map<int, DateTime> _versions = {};
+  final _reportEvents = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get reportEvents => _reportEvents.stream;
   ReverbSocket? _socket;
   StreamSubscription<dynamic>? _subscription;
   Timer? _retry, _heartbeat, _handshake;
@@ -285,7 +287,11 @@ class DriverRealtime extends ChangeNotifier with WidgetsBindingObserver {
       _versions[id] = time;
       _fleet[id] = value;
       _notify();
-    } else if (event == 'report.updated' || event == 'team.role.updated') {
+    } else if (event == 'report.updated') {
+      final data = _map(frame['data']);
+      if (data.isNotEmpty && !_disposed) _reportEvents.add(data);
+      await onAssignmentChanged?.call();
+    } else if (event == 'team.role.updated') {
       await onAssignmentChanged?.call();
     }
   }
@@ -429,6 +435,7 @@ class DriverRealtime extends ChangeNotifier with WidgetsBindingObserver {
   void dispose() {
     _disposed = true;
     stop();
+    unawaited(_reportEvents.close());
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

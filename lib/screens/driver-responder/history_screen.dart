@@ -36,6 +36,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
       groups.putIfAbsent(fmtDay(dispatch.time), () => []).add(dispatch);
     }
 
+    final completedCount = state.history
+        .where((d) => d.status == DispatchStatus.completed)
+        .length;
+    final flaggedCount = state.history
+        .where((d) => d.status == DispatchStatus.invalid)
+        .length;
+    final formSavedCount = state.history.where((d) => d.hasDriverForm).length;
+
     return RefreshIndicator(
       onRefresh: state.load,
       child: ListView(
@@ -51,9 +59,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const ResponderHeading(
+                ResponderHeading(
                   'Dispatch history',
-                  subtitle: 'Your past responses, all in one place.',
+                  subtitle: 'Past emergency responses and trip logs',
+                  trailing: state.history.isEmpty
+                      ? null
+                      : AppStatusBadge(
+                          '${items.length} ${items.length == 1 ? 'record' : 'records'}',
+                          color: palette.brand,
+                        ),
                 ),
                 Segmented<_Filter>(
                   value: _filter,
@@ -64,6 +78,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     SegmentOption(_Filter.invalid, 'Invalid'),
                   ],
                 ),
+                if (state.history.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  _HistorySummaryStrip(
+                    completedCount: completedCount,
+                    flaggedCount: flaggedCount,
+                    formSavedCount: formSavedCount,
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.lg),
                 if (state.isLoading && !state.hasLoaded)
                   const Padding(
@@ -103,22 +125,50 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(
                       2,
-                      AppSpacing.sm,
+                      AppSpacing.xs,
                       2,
                       AppSpacing.sm,
                     ),
-                    child: Text(
-                      group.key,
-                      style: MdrrmoTypography.labelSm.copyWith(
-                        color: palette.textMuted,
-                      ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            group.key,
+                            style: MdrrmoTypography.labelSm.copyWith(
+                              color: palette.textSecondary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: palette.surfaceSubtle,
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
+                            border: Border.all(color: palette.border),
+                          ),
+                          child: Text(
+                            '${group.value.length}',
+                            style: MdrrmoTypography.tabular(
+                              MdrrmoTypography.labelSm.copyWith(
+                                color: palette.textMuted,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  for (final dispatch in group.value)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                      child: _DispatchCard(dispatch: dispatch),
-                    ),
+                  AppSectionGroup(
+                    children: [
+                      for (final dispatch in group.value)
+                        _DispatchCard(dispatch: dispatch),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
                 ],
                 PageLoader(
                   hasMore: state.historyNext != null,
@@ -136,6 +186,96 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 }
 
+class _HistorySummaryStrip extends StatelessWidget {
+  const _HistorySummaryStrip({
+    required this.completedCount,
+    required this.flaggedCount,
+    required this.formSavedCount,
+  });
+
+  final int completedCount;
+  final int flaggedCount;
+  final int formSavedCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = MdrrmoColors.of(context);
+    return Surface(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm + 2,
+      ),
+      tint: palette.surface,
+      child: Row(
+        children: [
+          Expanded(
+            child: _SummaryMetric(
+              label: 'Done',
+              value: '$completedCount',
+              color: palette.success,
+            ),
+          ),
+          Container(width: 1, height: 28, color: palette.border),
+          Expanded(
+            child: _SummaryMetric(
+              label: 'Forms saved',
+              value: '$formSavedCount',
+              color: palette.brand,
+            ),
+          ),
+          Container(width: 1, height: 28, color: palette.border),
+          Expanded(
+            child: _SummaryMetric(
+              label: 'Flagged',
+              value: '$flaggedCount',
+              color: flaggedCount > 0 ? palette.warning : palette.textMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryMetric extends StatelessWidget {
+  const _SummaryMetric({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = MdrrmoColors.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          style: MdrrmoTypography.tabular(
+            MdrrmoTypography.titleMd.copyWith(color: color),
+          ),
+        ),
+        const SizedBox(height: 1),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: MdrrmoTypography.labelSm.copyWith(
+            color: palette.textMuted,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _DispatchCard extends StatelessWidget {
   const _DispatchCard({required this.dispatch});
   final Dispatch dispatch;
@@ -144,8 +284,17 @@ class _DispatchCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
     final done = dispatch.status == DispatchStatus.completed;
-    return ResponderPanel(
-      padding: const EdgeInsets.all(AppSpacing.md),
+    final invalid = dispatch.status == DispatchStatus.invalid;
+    final statusColor = done
+        ? palette.success
+        : invalid
+        ? palette.warning
+        : palette.textMuted;
+    final hasDestination =
+        dispatch.destination.trim().isNotEmpty &&
+        dispatch.destination != 'Destination not recorded';
+
+    return InkWell(
       onTap: () {
         final state = ResponderScope.of(context);
         Navigator.of(context).push(
@@ -157,76 +306,191 @@ class _DispatchCard extends StatelessWidget {
           ),
         );
       },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.xs,
-            children: [
-              Text(
-                dispatch.id,
-                style: MdrrmoTypography.tabular(
-                  MdrrmoTypography.labelSm.copyWith(color: palette.textMuted),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md + 2,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              margin: const EdgeInsets.only(top: 2),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: statusColor.withValues(
+                  alpha: palette.isDark ? 0.18 : 0.10,
                 ),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
               ),
-              AppStatusBadge(
-                done
-                    ? 'Completed'
-                    : dispatch.status == DispatchStatus.invalid
-                    ? 'Invalid'
-                    : 'Unknown status',
-                color: done ? palette.success : palette.warning,
-                icon: done ? AppIcons.checkCircle : AppIcons.infoCircle,
+              child: Icon(
+                done ? AppIcons.checkCircle : AppIcons.infoCircle,
+                size: 19,
+                color: statusColor,
               ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            dispatch.emergencyType,
-            style: MdrrmoTypography.titleMd.copyWith(
-              color: palette.textPrimary,
             ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(AppIcons.pin, size: 17, color: palette.brand),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  dispatch.pickup,
-                  style: MdrrmoTypography.bodyMd.copyWith(
-                    color: palette.textPrimary,
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          dispatch.emergencyType,
+                          style: MdrrmoTypography.titleMd.copyWith(
+                            color: palette.textPrimary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: palette.surfaceSubtle,
+                          borderRadius: BorderRadius.circular(AppRadius.xs),
+                          border: Border.all(color: palette.border),
+                        ),
+                        child: Text(
+                          dispatch.id,
+                          style: MdrrmoTypography.tabular(
+                            MdrrmoTypography.labelSm.copyWith(
+                              color: palette.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Divider(height: 1, color: palette.border),
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              Icon(AppIcons.clock, size: 14, color: palette.textMuted),
-              const SizedBox(width: AppSpacing.xs),
-              Expanded(
-                child: Text(
-                  '${fmtTime(dispatch.time)} · ${dispatch.driver}',
-                  style: MdrrmoTypography.labelSm.copyWith(
-                    color: palette.textMuted,
-                    fontWeight: FontWeight.w500,
+                  const SizedBox(height: 4),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Icon(
+                          AppIcons.pin,
+                          size: 13,
+                          color: palette.textMuted,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          dispatch.pickup,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: MdrrmoTypography.bodySm.copyWith(
+                            color: palette.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                  if (hasDestination) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Icon(
+                            AppIcons.navigation,
+                            size: 13,
+                            color: palette.brand,
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            dispatch.destination,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: MdrrmoTypography.bodySm.copyWith(
+                              color: palette.textMuted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.xs,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      AppStatusBadge(
+                        done
+                            ? 'Completed'
+                            : invalid
+                            ? 'Invalid'
+                            : 'Unknown status',
+                        color: statusColor,
+                        icon: done ? AppIcons.checkCircle : AppIcons.infoCircle,
+                      ),
+                      AppStatusBadge(
+                        priorityLabel(dispatch.priority),
+                        color: Semantic.priority(dispatch.priority),
+                      ),
+                      if (dispatch.hasDriverForm)
+                        AppStatusBadge(
+                          'Form saved',
+                          color: palette.brand,
+                          icon: AppIcons.fileCheck,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: 2,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        '${fmtTime(dispatch.time)} · ${dispatch.driver}',
+                        style: MdrrmoTypography.labelSm.copyWith(
+                          color: palette.textMuted,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (dispatch.durationMin != null)
+                        Text(
+                          '· ${dispatch.durationMin} min',
+                          style: MdrrmoTypography.tabular(
+                            MdrrmoTypography.labelSm.copyWith(
+                              color: palette.textMuted,
+                            ),
+                          ),
+                        ),
+                      if (dispatch.distanceKm != null)
+                        Text(
+                          '· ${dispatch.distanceKm!.toStringAsFixed(1)} km',
+                          style: MdrrmoTypography.tabular(
+                            MdrrmoTypography.labelSm.copyWith(
+                              color: palette.textMuted,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(width: AppSpacing.sm),
-              Icon(AppIcons.chevron, size: 18, color: palette.textMuted),
-            ],
-          ),
-        ],
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Icon(AppIcons.chevron, size: 18, color: palette.textMuted),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -12,16 +12,17 @@ import 'package:location/location.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:mdrrmo_flutter/data/api_client.dart';
 import 'package:mdrrmo_flutter/data/resident_models.dart';
-import 'package:mdrrmo_flutter/screens/account_screen.dart';
 import 'package:mdrrmo_flutter/screens/driver-responder/driver_form_screen.dart';
 import 'package:mdrrmo_flutter/screens/driver-responder/emergency_form_screen.dart';
 import 'package:mdrrmo_flutter/screens/driver-responder/shell.dart';
 import 'package:mdrrmo_flutter/screens/location_access_gate.dart';
 import 'package:mdrrmo_flutter/screens/pending_submissions_screen.dart';
+import 'package:mdrrmo_flutter/screens/record_details_screen.dart';
 import 'package:mdrrmo_flutter/screens/resident/resident_shell.dart';
 import 'package:mdrrmo_flutter/screens/route_navigation_screen.dart';
 import 'package:mdrrmo_flutter/services/driver_realtime.dart';
 import 'package:mdrrmo_flutter/services/driver_tracking.dart';
+import 'package:mdrrmo_flutter/services/pending_submissions.dart';
 import 'package:mdrrmo_flutter/state/driver_responder_state.dart';
 import 'package:mdrrmo_flutter/state/resident_state.dart';
 import 'package:mdrrmo_flutter/ui/kit.dart';
@@ -55,6 +56,19 @@ class _RedesignAdapter implements HttpClientAdapter {
       };
     } else if (path.contains('voice-calls')) {
       body = {'calls': []};
+    } else if (path.endsWith('/resident/reports/12') ||
+        path.endsWith('/driver-responder/reports/12')) {
+      body = {
+        'id': 12,
+        'reference': 'RPT-12',
+        'type': 'Medical Emergency',
+        'status': path.contains('driver-responder') ? 'dispatched' : 'pending',
+        'priority': 'high',
+        'location': 'Barangay San Juan, Balagtas',
+        'description': 'Resident needs medical transport.',
+        'reported_at': '2030-01-02T09:00:00Z',
+        'can_edit': true,
+      };
     } else {
       body = {};
     }
@@ -246,7 +260,7 @@ void main() {
   );
 
   testWidgets(
-    'Resident omits Voice calls and Account & profile while Responder keeps AccountScreen in More',
+    'Resident omits Voice calls and Account & profile while Responder More options only shows Refresh information and Log out',
     (tester) async {
       final resident = _residentState();
       await resident.load();
@@ -260,7 +274,11 @@ void main() {
       await tester.tap(find.byIcon(AppIcons.more));
       await tester.pumpAndSettle();
       expect(find.text('Account & profile'), findsNothing);
-      expect(find.text('Search records'), findsOneWidget);
+      expect(find.text('Search records'), findsNothing);
+      expect(find.text('Unconfirmed submissions'), findsNothing);
+      expect(find.text('Refresh information'), findsOneWidget);
+      expect(find.byIcon(AppIcons.refresh), findsNothing);
+      expect(find.byIcon(AppIcons.logout), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       resident.dispose();
@@ -286,12 +304,18 @@ void main() {
       for (var i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 60));
       }
-      await tester.tap(find.text('Account & profile'));
+      expect(find.text('Account & profile'), findsNothing);
+      expect(find.text('Reports I submitted'), findsNothing);
+      expect(find.text('Unconfirmed submissions'), findsNothing);
+      expect(find.text('Search records'), findsNothing);
+      expect(find.text('Refresh information'), findsOneWidget);
+      expect(find.text('Log out'), findsOneWidget);
+      expect(find.byIcon(AppIcons.refresh), findsNothing);
+      expect(find.byIcon(AppIcons.logout), findsNothing);
+      await tester.tap(find.text('Refresh information'));
       for (var i = 0; i < 10; i++) {
         await tester.pump(const Duration(milliseconds: 60));
       }
-      expect(find.byType(AccountScreen), findsOneWidget);
-      expect(find.text('Security'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       realtime.dispose();
@@ -384,8 +408,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byType(DraggableScrollableSheet), findsOneWidget);
-      expect(find.text('Update route'), findsOneWidget);
-      expect(find.text('Show route'), findsOneWidget);
+      expect(find.byTooltip('Update route'), findsOneWidget);
+      expect(find.byTooltip('Show route'), findsOneWidget);
       final sheetScroll = find.descendant(
         of: find.byType(DraggableScrollableSheet),
         matching: find.byType(Scrollable),
@@ -454,6 +478,147 @@ void main() {
       // without the 48px top status-bar inset above the icons.
       expect(navBarRect.height, 88);
       expect(iconRect.top - navBarRect.top, lessThan(20));
+    },
+  );
+
+  testWidgets(
+    'small 320dp phone surfaces Resident Current status and Role pending-sync / connection banners cleanly',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 760);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final queuedResident = await tester.runAsync(
+        () => PendingSubmissions.prepare(
+          '/resident/reports',
+          {'location': 'Barangay San Juan'},
+        ),
+      );
+      try {
+        final resident = _residentState();
+        await resident.load();
+        await tester.pumpWidget(
+          _darkApp(
+            ResidentScope(
+              state: resident,
+              child: const ResidentShell(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Current status'), findsOneWidget);
+        expect(find.text('Waiting for review'), findsWidgets);
+        expect(find.text('1 unsynced request'), findsOneWidget);
+        expect(find.text('Review & send'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+
+        await tester.pumpWidget(const SizedBox());
+        resident.dispose();
+      } finally {
+        if (queuedResident != null) {
+          await tester.runAsync(
+            () => PendingSubmissions.complete(queuedResident.key),
+          );
+        }
+      }
+
+      final queuedDriver = await tester.runAsync(
+        () => PendingSubmissions.prepare(
+          '/driver-responder/reports',
+          {'location': 'MacArthur Highway'},
+        ),
+      );
+      final responder = ResponderState(
+        api: ResponderUiApi(assigned: true, assignedServices: true),
+      );
+      await responder.load();
+      final realtime = DriverRealtime(client: dio);
+      final tracking = DriverTracking(client: dio);
+      try {
+        await tester.pumpWidget(
+          _darkApp(
+            ResponderScope(
+              state: responder,
+              child: Shell(
+                tracking: tracking,
+                realtime: realtime,
+                onLocationAccessChanged: (_) {},
+              ),
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+
+        expect(find.text('1 unsynced report'), findsOneWidget);
+        expect(find.widgetWithText(AppButton, 'Start trip'), findsOneWidget);
+        expect(find.textContaining('Live'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox());
+        realtime.dispose();
+        tracking.dispose();
+        responder.dispose();
+        if (queuedDriver != null) {
+          await tester.runAsync(
+            () => PendingSubmissions.complete(queuedDriver.key),
+          );
+        }
+      }
+    },
+  );
+
+  testWidgets(
+    'Resident RecordDetailsScreen renders low-icon grouped details on 320dp screen',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 760);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_darkApp(const RecordDetailsScreen(id: 12)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Medical Emergency'), findsOneWidget);
+      expect(find.text('Waiting for review'), findsOneWidget);
+      expect(
+        find.text(
+          'MDRRMO has received your report and is reviewing it now.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Incident details'), findsOneWidget);
+      expect(find.text('Response team'), findsOneWidget);
+      expect(find.text('Activity timeline'), findsOneWidget);
+      expect(find.text('Voice call invitations'), findsNothing);
+      expect(find.byType(AppSectionGroup), findsAtLeastNWidgets(2));
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(
+        _darkApp(
+          const RecordDetailsScreen(
+            key: ValueKey('driver-details'),
+            id: 12,
+            driver: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Medical Emergency'), findsOneWidget);
+      expect(
+        find.text('Assigned for emergency response.'),
+        findsOneWidget,
+      );
+      expect(find.text('Incident details'), findsOneWidget);
+      expect(find.text('Activity timeline'), findsOneWidget);
+      expect(find.byType(AppSectionGroup), findsAtLeastNWidgets(2));
+      expect(tester.takeException(), isNull);
     },
   );
 }

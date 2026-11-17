@@ -116,28 +116,63 @@ class AuthService {
     required String email,
     required String password,
     required String consentVersion,
+    String? idType,
+    Uint8List? idPhotoBytes,
+    String? idPhotoName,
     String? submissionKey,
   }) async {
-    final response = await _client
-        .post(
-          Uri.parse('$apiUrl/auth/mobile/register'),
-          headers: {
-            'Idempotency-Key': submissionKey ?? newSubmissionKey(),
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({
-            'name': InputValidation.normalizeName(name),
-            'contact': InputValidation.normalizePhone(contact),
-            'address': address,
-            'email': email,
-            'password': password,
-            'password_confirmation': password,
-            'consent': true,
-            'consent_version': consentVersion,
-          }),
-        )
-        .timeout(const Duration(seconds: 15));
+    final key = submissionKey ?? newSubmissionKey();
+    final uri = Uri.parse('$apiUrl/auth/mobile/register');
+    final http.Response response;
+    if (idPhotoBytes != null && idPhotoName != null) {
+      final request = http.MultipartRequest('POST', uri)
+        ..headers['Idempotency-Key'] = key
+        ..headers['Accept'] = 'application/json'
+        ..fields['name'] = InputValidation.normalizeName(name)
+        ..fields['contact'] = InputValidation.normalizePhone(contact)
+        ..fields['address'] = address
+        ..fields['email'] = email
+        ..fields['password'] = password
+        ..fields['password_confirmation'] = password
+        ..fields['consent'] = '1'
+        ..fields['consent_version'] = consentVersion;
+      if (idType != null && idType.isNotEmpty) {
+        request.fields['id_type'] = idType;
+      }
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'id_photo',
+          idPhotoBytes,
+          filename: idPhotoName,
+        ),
+      );
+      final streamed = await _client
+          .send(request)
+          .timeout(const Duration(seconds: 20));
+      response = await http.Response.fromStream(streamed);
+    } else {
+      response = await _client
+          .post(
+            uri,
+            headers: {
+              'Idempotency-Key': key,
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'name': InputValidation.normalizeName(name),
+              'contact': InputValidation.normalizePhone(contact),
+              'address': address,
+              'email': email,
+              'password': password,
+              'password_confirmation': password,
+              'consent': true,
+              'consent_version': consentVersion,
+              if (idType != null && idType.isNotEmpty) 'id_type': idType,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+    }
 
     if (response.statusCode >= 500) {
       throw Exception('MDRRMO is temporarily unavailable. Please try again.');

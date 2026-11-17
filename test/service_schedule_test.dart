@@ -115,7 +115,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Municipal Hall, Balagtas, Bulacan'), findsOneWidget);
-      expect(find.text('Navigate to destination'), findsOneWidget);
+      expect(find.text('Navigate to pickup'), findsOneWidget);
       for (final label in [
         'Start service trip',
         'Mark on scene',

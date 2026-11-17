@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:latlong2/latlong.dart';
@@ -140,6 +141,8 @@ class ResidentState extends ChangeNotifier {
     required String location,
     required LatLng pin,
     required String notes,
+    Uint8List? photoBytes,
+    String? photoName,
   }) async {
     _checkCanSubmit();
     final validation =
@@ -163,6 +166,8 @@ class ResidentState extends ChangeNotifier {
         latitude: pin.latitude,
         longitude: pin.longitude,
         description: notes,
+        photoBytes: photoBytes,
+        photoName: photoName,
       );
       if (_isDisposed) throw StateError('This session has closed.');
       final report = ReportRecord.fromJson(

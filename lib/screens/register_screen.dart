@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../data/input_validation.dart';
@@ -34,8 +36,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Map<String, dynamic>? _policy;
   bool _policyLoading = false;
   String? _policyError;
+  static const _idTypes = [
+    'National ID',
+    'Driver License',
+    'PhilHealth ID',
+    'Voters ID',
+    'Passport',
+  ];
+
   final _submissionKey = newSubmissionKey();
   int _step = 0;
+  String? _idType;
+  Uint8List? _idPhotoBytes;
+  String? _idPhotoName;
   late final AuthService _auth = widget.authService ?? AuthService();
 
   void _goToStep(int step) {
@@ -50,7 +63,39 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void _continue() {
     if (_loading) return;
     if (!_key.currentState!.validate()) return;
+    if (_step == 0 && _idPhotoBytes == null) {
+      setState(() => _error = 'Please upload a photo of your valid ID.');
+      return;
+    }
     _goToStep(_step + 1);
+  }
+
+  Future<void> _pickIdPhoto({required bool fromCamera}) async {
+    if (_loading) return;
+    try {
+      final file = await ImagePicker().pickImage(
+        source: fromCamera ? ImageSource.camera : ImageSource.gallery,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        if (mounted) {
+          setState(() => _error = 'Choose an ID photo smaller than 5 MB.');
+        }
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _idPhotoBytes = bytes;
+        _idPhotoName = file.name;
+        _error = null;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = apiErrorMessage(error));
+    }
   }
 
   @override
@@ -123,6 +168,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         email: _email.text.trim(),
         password: _password.text,
         consentVersion: _policy!['version'] as String,
+        idType: _idType,
+        idPhotoBytes: _idPhotoBytes,
+        idPhotoName: _idPhotoName,
         submissionKey: _submissionKey,
       );
       if (!mounted) return;
@@ -199,13 +247,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
       scrollController: _scroll,
       title: 'Create resident account',
       formKey: _key,
-      submitLabel: _step < 2
-          ? (_step == 0 ? 'Continue to account' : 'Review my details')
+      submitLabel: _step == 0
+          ? 'Continue to account'
           : (_loading ? 'Submitting registration...' : 'Submit registration'),
       submitLoading: _loading,
       onSubmit: _loading || _submitted
           ? null
-          : (_step < 2 ? _continue : (_policy == null ? null : _submit)),
+          : (_step == 0 ? _continue : (_policy == null ? null : _submit)),
       children: [
         _introduction(palette),
         if (_step > 0)
@@ -217,12 +265,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
               label: const Text('Previous step'),
             ),
           ),
-        if (_step == 2 && _policyLoading)
+        if (_step == 1 && _policyLoading)
           const Padding(
             padding: EdgeInsets.only(bottom: 12),
             child: LinearProgressIndicator(minHeight: 3),
           ),
-        if (_step == 2 && _policyError != null)
+        if (_step == 1 && _policyError != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 12),
             child: AppBanner(
@@ -278,9 +326,187 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 maxLength: 255,
                 maxLines: 2,
               ),
+              DropdownButtonFormField<String>(
+                initialValue: _idType,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'ID Type',
+                  hintText: 'Select valid ID type',
+                ),
+                items: [
+                  for (final type in _idTypes)
+                    DropdownMenuItem(value: type, child: Text(type)),
+                ],
+                onChanged: _loading
+                    ? null
+                    : (value) => setState(() {
+                        _idType = value;
+                        _error = null;
+                      }),
+                validator: (v) =>
+                    v == null || v.isEmpty ? 'Select an ID type' : null,
+              ),
+              Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: palette.surfaceSubtle,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(
+                    color: _idPhotoBytes != null
+                        ? palette.brand.withValues(alpha: 0.45)
+                        : palette.border,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: palette.brandTint,
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
+                          ),
+                          child: Icon(
+                            AppIcons.badgeCheck,
+                            color: palette.brand,
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm + 2),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Upload ID',
+                                style: MdrrmoTypography.labelSm.copyWith(
+                                  color: palette.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Take a clear photo of your valid ID or choose one from your gallery (max 5 MB).',
+                                style: MdrrmoTypography.bodySm.copyWith(
+                                  color: palette.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    if (_idPhotoBytes != null)
+                      Container(
+                        decoration: BoxDecoration(
+                          color: palette.surface,
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                          border: Border.all(color: palette.border),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Image.memory(
+                              _idPhotoBytes!,
+                              height: 160,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.md,
+                                vertical: AppSpacing.xs,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text(
+                                    _idPhotoName ?? 'ID photo attached',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: MdrrmoTypography.bodySm.copyWith(
+                                      color: palette.textSecondary,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Wrap(
+                                    spacing: 4,
+                                    children: [
+                                      TextButton(
+                                        onPressed: _loading
+                                            ? null
+                                            : () => _pickIdPhoto(
+                                                fromCamera: true,
+                                              ),
+                                        child: const Text('Camera'),
+                                      ),
+                                      TextButton(
+                                        onPressed: _loading
+                                            ? null
+                                            : () => _pickIdPhoto(
+                                                fromCamera: false,
+                                              ),
+                                        child: const Text('Gallery'),
+                                      ),
+                                      TextButton(
+                                        onPressed: _loading
+                                            ? null
+                                            : () => setState(() {
+                                                _idPhotoBytes = null;
+                                                _idPhotoName = null;
+                                              }),
+                                        child: Text(
+                                          'Remove',
+                                          style: TextStyle(
+                                            color: palette.danger,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: AppButton(
+                              label: 'Camera',
+                              icon: AppIcons.camera,
+                              kind: AppButtonKind.outline,
+                              onPress: _loading
+                                  ? null
+                                  : () => _pickIdPhoto(fromCamera: true),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: AppButton(
+                              label: 'Add photo',
+                              icon: Icons.photo_library_outlined,
+                              kind: AppButtonKind.outline,
+                              onPress: _loading
+                                  ? null
+                                  : () => _pickIdPhoto(fromCamera: false),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
-        if (_step == 1)
+        if (_step == 1) ...[
           FormGroup(
             key: const ValueKey('account-details'),
             title: 'Secure your account',
@@ -314,8 +540,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
             ],
           ),
-        if (_step == 2) ...[
-          _review(palette),
           const SizedBox(height: AppSpacing.lg),
           AppBanner(
             tone: AppBannerTone.info,
@@ -325,13 +549,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
           const SizedBox(height: AppSpacing.lg),
           Surface(
             padding: const EdgeInsets.all(AppSpacing.md + 2),
+            borderColor: _showAgreeError
+                ? palette.danger.withValues(alpha: 0.55)
+                : null,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Icon(AppIcons.safety, size: 17, color: palette.brand),
-                    const SizedBox(width: 8),
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: palette.brandTint,
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                      ),
+                      child: Icon(
+                        AppIcons.safety,
+                        size: 16,
+                        color: palette.brand,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm + 2),
                     Expanded(
                       child: Text(
                         'Your privacy and consent',
@@ -342,51 +581,64 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.sm + 2),
                 Semantics(
                   container: true,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    onTap: _policy == null || _loading
-                        ? null
-                        : () => setState(() {
-                            _agreed = !_agreed;
-                            _showAgreeError = false;
-                          }),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Checkbox(
-                            value: _agreed,
-                            onChanged: _policy == null || _loading
-                                ? null
-                                : (v) => setState(() {
-                                    _agreed = v ?? false;
-                                    _showAgreeError = false;
-                                  }),
-                          ),
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 10),
-                              child: Text(
-                                _policy?['consent'] as String? ??
-                                    'Load the consent information to continue.',
-                                style: MdrrmoTypography.bodySm.copyWith(
-                                  color: palette.textPrimary,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _showAgreeError
+                          ? palette.dangerTint
+                          : palette.surfaceSubtle,
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      border: Border.all(
+                        color: _showAgreeError
+                            ? palette.danger.withValues(alpha: 0.4)
+                            : palette.border,
+                      ),
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      onTap: _policy == null || _loading
+                          ? null
+                          : () => setState(() {
+                              _agreed = !_agreed;
+                              _showAgreeError = false;
+                            }),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 6, 12, 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Checkbox(
+                              value: _agreed,
+                              onChanged: _policy == null || _loading
+                                  ? null
+                                  : (v) => setState(() {
+                                      _agreed = v ?? false;
+                                      _showAgreeError = false;
+                                    }),
+                            ),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Text(
+                                  _policy?['consent'] as String? ??
+                                      'Load the consent information to continue.',
+                                  style: MdrrmoTypography.bodySm.copyWith(
+                                    color: palette.textPrimary,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
                 if (_showAgreeError)
                   Padding(
-                    padding: const EdgeInsets.only(left: 12, top: 4),
+                    padding: const EdgeInsets.only(left: 4, top: 6),
                     child: Text(
                       'Please agree to continue',
                       style: MdrrmoTypography.labelSm.copyWith(
@@ -395,7 +647,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ),
                 if (_policy != null) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: AppSpacing.xs),
                   Wrap(
                     spacing: 8,
                     children: [
@@ -419,9 +671,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ],
         if (_step == 0)
-          TextButton(
-            onPressed: () => Navigator.of(context).maybePop(),
-            child: const Text('Already have an account? Sign in'),
+          Center(
+            child: TextButton(
+              onPressed: () => Navigator.of(context).maybePop(),
+              child: const Text('Already have an account? Sign in'),
+            ),
           ),
       ],
     );
@@ -431,12 +685,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     const titles = [
       "Let's get to know you",
       'Create your sign-in details',
-      'Review and give consent',
     ];
     const descriptions = [
       'Help MDRRMO reach you with accurate contact and home address details. All fields are required.',
-      'Use an email you can access and a password with at least 8 characters.',
-      'Check your information before sending it to MDRRMO for review.',
+      'Use an email you can access, set a password with at least 8 characters, and review your privacy consent.',
     ];
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.lg),
@@ -445,50 +697,71 @@ class _RegisterScreenState extends State<RegisterScreen> {
         children: [
           Row(
             children: [
-              Icon(AppIcons.safety, color: palette.brand, size: 20),
-              const SizedBox(width: 8),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: palette.brandTint,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(
+                    color: palette.brand.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Icon(AppIcons.safety, color: palette.brand, size: 19),
+              ),
+              const SizedBox(width: AppSpacing.sm + 2),
               Flexible(
                 child: Text(
                   'RESIDENT REGISTRATION',
                   style: MdrrmoTypography.labelSm.copyWith(
                     color: palette.brand,
+                    letterSpacing: 0.6,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.lg),
-          Row(
-            children: [
-              for (var i = 0; i < 3; i++) ...[
-                if (i > 0) const SizedBox(width: 6),
-                Expanded(
-                  child: Container(
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: i <= _step ? palette.brand : palette.border,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
+          const SizedBox(height: AppSpacing.md + 2),
+          Surface(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            tint: palette.surfaceSubtle,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Step ${_step + 1} of 2: ${['Personal details', 'Account security & consent'][_step]}',
+                  style: MdrrmoTypography.labelSm.copyWith(
+                    color: palette.textSecondary,
                   ),
                 ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    for (var i = 0; i < 2; i++) ...[
+                      if (i > 0) const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: i <= _step ? palette.brand : palette.border,
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            'Step ${_step + 1} of 3: ${['Personal details', 'Account security', 'Review & consent'][_step]}',
-            style: MdrrmoTypography.labelSm.copyWith(
-              color: palette.textSecondary,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.md + 4),
           Text(
             titles[_step],
             style: MdrrmoTypography.displaySm.copyWith(
               color: palette.textPrimary,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             descriptions[_step],
             style: MdrrmoTypography.bodyMd.copyWith(
@@ -499,37 +772,4 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
     );
   }
-
-  Widget _review(MdrrmoColors palette) => Surface(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const SectionTitle('Your registration details', icon: AppIcons.user),
-        for (final entry in {
-          'Full name': InputValidation.normalizeName(_name.text),
-          'Contact number': InputValidation.normalizePhone(_contact.text),
-          'Home address': _address.text.trim(),
-          'Email address': _email.text.trim(),
-        }.entries) ...[
-          Text(
-            entry.key,
-            style: MdrrmoTypography.labelSm.copyWith(
-              color: palette.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            entry.value,
-            style: MdrrmoTypography.bodyMd.copyWith(color: palette.textPrimary),
-          ),
-          const SizedBox(height: AppSpacing.md),
-        ],
-        TextButton.icon(
-          onPressed: _loading ? null : () => _goToStep(0),
-          icon: const Icon(AppIcons.form, size: 16),
-          label: const Text('Edit my details'),
-        ),
-      ],
-    ),
-  );
 }

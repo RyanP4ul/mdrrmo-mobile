@@ -122,35 +122,50 @@ class _LoginScreenState extends State<LoginScreen> {
               maxWidth: 440,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: palette.brandTint,
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      border: Border.all(
-                        color: palette.brand.withValues(alpha: 0.2),
+                  Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              palette.brandTint,
+                              palette.brand.withValues(
+                                alpha: palette.isDark ? 0.22 : 0.12,
+                              ),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(AppRadius.lg),
+                          border: Border.all(
+                            color: palette.brand.withValues(alpha: 0.26),
+                          ),
+                        ),
+                        child: const LogoMark(size: 54),
                       ),
-                    ),
-                    child: const LogoMark(size: 56),
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        'MDRRMO',
+                        style: MdrrmoTypography.displaySm.copyWith(
+                          fontSize: 24,
+                          color: palette.textPrimary,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Disaster Risk Management & Medical Operations',
+                        textAlign: TextAlign.center,
+                        style: MdrrmoTypography.bodySm.copyWith(
+                          color: palette.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'MDRRMO',
-                    style: MdrrmoTypography.displaySm.copyWith(
-                      color: palette.textPrimary,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Disaster Risk Management & Medical Operations',
-                    textAlign: TextAlign.center,
-                    style: MdrrmoTypography.bodySm.copyWith(
-                      color: palette.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: AppSpacing.xl),
                   Surface(
                     padding: const EdgeInsets.all(AppSpacing.lg + 2),
                     child: Form(
@@ -158,28 +173,55 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            'Sign In',
-                            style: MdrrmoTypography.titleLg.copyWith(
-                              color: palette.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Sign in with your resident or responder account.',
-                            style: MdrrmoTypography.bodySm.copyWith(
-                              color: palette.textSecondary,
-                            ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Sign In',
+                                      style: MdrrmoTypography.titleLg.copyWith(
+                                        color: palette.textPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Sign in with your resident or responder account.',
+                                      style: MdrrmoTypography.bodySm.copyWith(
+                                        color: palette.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                width: 38,
+                                height: 38,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: palette.brandTint,
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadius.sm,
+                                  ),
+                                ),
+                                child: Icon(
+                                  AppIcons.lock,
+                                  size: 18,
+                                  color: palette.brand,
+                                ),
+                              ),
+                            ],
                           ),
                           if (_error != null) ...[
-                            const SizedBox(height: 14),
+                            const SizedBox(height: AppSpacing.md + 2),
                             AppBanner(
                               tone: AppBannerTone.danger,
                               icon: AppIcons.alert,
                               message: _error!,
                             ),
                           ],
-                          const SizedBox(height: 16),
+                          const SizedBox(height: AppSpacing.lg),
                           AppTextField(
                             controller: _email,
                             label: 'Email address',
@@ -192,12 +234,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ? null
                                 : 'Enter a valid email address',
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: AppSpacing.md + 2),
                           AppPasswordField(
                             controller: _password,
                             onSubmit: _submit,
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: AppSpacing.lg),
                           AppButton(
                             label: _loading ? 'Signing in...' : 'Sign In',
                             loading: _loading,
@@ -207,41 +249,84 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  AppButton(
-                    label: 'Emergency SOS',
-                    icon: AppIcons.phoneCall,
-                    kind: AppButtonKind.dangerOutline,
-                    onPress: _loading
-                        ? null
-                        : () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const SosScreen(guest: true),
+                  const SizedBox(height: AppSpacing.md),
+                  Surface(
+                    padding: const EdgeInsets.all(AppSpacing.sm + 2),
+                    tint: palette.dangerTint,
+                    borderColor: palette.danger.withValues(alpha: 0.28),
+                    child: AppButton(
+                      label: 'Emergency SOS',
+                      icon: AppIcons.siren,
+                      kind: AppButtonKind.destructive,
+                      onPress: _loading
+                          ? null
+                          : () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const SosScreen(guest: true),
+                              ),
                             ),
-                          ),
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: _loading
-                        ? null
-                        : () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const GuestReportPage(),
-                            ),
+                  const SizedBox(height: AppSpacing.md),
+                  AppSectionGroup(
+                    children: [
+                      AppRowItem(
+                        leading: Container(
+                          width: 36,
+                          height: 36,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: palette.surfaceSubtle,
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
                           ),
-                    child: const Text('Continue as guest'),
-                  ),
-                  TextButton(
-                    onPressed: _loading
-                        ? null
-                        : () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const RegisterScreen(),
-                            ),
+                          child: Icon(
+                            AppIcons.flag,
+                            size: 17,
+                            color: palette.textSecondary,
                           ),
-                    child: const Text('New resident? Create an account'),
+                        ),
+                        title: 'Continue as guest',
+                        subtitle: 'Report an emergency without an account',
+                        showChevron: true,
+                        enabled: !_loading,
+                        onTap: _loading
+                            ? null
+                            : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const GuestReportPage(),
+                                ),
+                              ),
+                      ),
+                      AppRowItem(
+                        leading: Container(
+                          width: 36,
+                          height: 36,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: palette.brandTint,
+                            borderRadius: BorderRadius.circular(AppRadius.sm),
+                          ),
+                          child: Icon(
+                            AppIcons.user,
+                            size: 17,
+                            color: palette.brand,
+                          ),
+                        ),
+                        title: 'New resident? Create an account',
+                        subtitle: 'Register for faster tracking and service booking',
+                        showChevron: true,
+                        enabled: !_loading,
+                        onTap: _loading
+                            ? null
+                            : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const RegisterScreen(),
+                                ),
+                              ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: AppSpacing.md),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Text(

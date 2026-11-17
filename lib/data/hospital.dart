@@ -10,6 +10,7 @@ class HospitalRecommendation {
     required this.point,
     required this.distanceKm,
     this.availableBeds,
+    this.available,
     this.contact,
     this.specialtyMatch = false,
   });
@@ -19,8 +20,12 @@ class HospitalRecommendation {
   final LatLng point;
   final double distanceKm;
   final int? availableBeds;
+  final bool? available;
   final String? contact;
   final bool specialtyMatch;
+
+  bool get isAvailable =>
+      available ?? (availableBeds == null || availableBeds! > 0);
 
   factory HospitalRecommendation.fromJson(Map<String, dynamic> data) {
     final lat = (data['lat'] as num).toDouble();
@@ -38,6 +43,7 @@ class HospitalRecommendation {
       point: LatLng(lat, lng),
       distanceKm: distance,
       availableBeds: data['availableBeds'] as int?,
+      available: data['available'] is bool ? data['available'] as bool : null,
       contact: data['contactNumber'] as String?,
       specialtyMatch: data['match'] == true,
     );

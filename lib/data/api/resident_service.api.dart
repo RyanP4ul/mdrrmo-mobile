@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 import '../api_client.dart';
@@ -32,21 +34,49 @@ class ResidentApi {
     required double latitude,
     required double longitude,
     required String description,
+    Uint8List? photoBytes,
+    String? photoName,
   }) async {
-    final data = await PendingSubmissions.send(
-      _client,
-      '/resident/reports',
-      {
+    final Map<String, dynamic> data;
+    if (photoBytes != null && photoName != null) {
+      final formData = FormData.fromMap({
         'incident_type_id': incidentTypeId,
         'reporter_type': reporterType,
         'location': location,
         'lat': latitude,
         'lng': longitude,
         'description': description,
-      },
-      validate: _validateReport,
-      cancelToken: _requests,
-    );
+        'photo': MultipartFile.fromBytes(photoBytes, filename: photoName),
+      });
+      final response = await _client.post(
+        '/resident/reports',
+        data: formData,
+        options: Options(headers: {'Idempotency-Key': newSubmissionKey()}),
+        cancelToken: _requests,
+      );
+      if (response.data is! Map) {
+        throw const FormatException('Invalid report response from the server.');
+      }
+      data = Map<String, dynamic>.from(response.data as Map);
+      _validateReport(data);
+      data['_submission_replayed'] =
+          response.headers.value('Idempotency-Replayed') == 'true';
+    } else {
+      data = await PendingSubmissions.send(
+        _client,
+        '/resident/reports',
+        {
+          'incident_type_id': incidentTypeId,
+          'reporter_type': reporterType,
+          'location': location,
+          'lat': latitude,
+          'lng': longitude,
+          'description': description,
+        },
+        validate: _validateReport,
+        cancelToken: _requests,
+      );
+    }
     if (data['report'] is! Map) {
       throw const FormatException('Invalid report response from the server.');
     }

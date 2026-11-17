@@ -17,6 +17,7 @@ class ResidentScheduleScreen extends StatefulWidget {
 }
 
 class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
+  final _address = TextEditingController();
   final _destination = TextEditingController();
   final _notes = TextEditingController();
   SchedulePurpose? _purpose;
@@ -24,9 +25,26 @@ class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
   TimeOfDay? _time;
   bool _sending = false;
   bool _creating = false;
+  bool _addressInitialized = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncAddressFromProfile();
+  }
+
+  void _syncAddressFromProfile() {
+    if (_addressInitialized || _address.text.trim().isNotEmpty) return;
+    final residentAddress = ResidentScope.of(context).profile.address.trim();
+    if (residentAddress.isNotEmpty) {
+      _address.text = residentAddress;
+      _addressInitialized = true;
+    }
+  }
 
   @override
   void dispose() {
+    _address.dispose();
     _destination.dispose();
     _notes.dispose();
     super.dispose();
@@ -34,34 +52,37 @@ class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
 
   bool get _valid =>
       _purpose != null &&
+      _address.text.trim().isNotEmpty &&
       _destination.text.trim().isNotEmpty &&
       _date != null &&
       _time != null;
 
+  void _openNewRequest() {
+    setState(() => _creating = true);
+    _syncAddressFromProfile();
+  }
+
   Future<void> _pickDate() async {
     final now = DateTime.now();
-
-    final d = await showDatePicker(
+    final picked = await showDatePicker(
       context: context,
       useRootNavigator: true,
       initialDate: _date ?? now,
       firstDate: DateTime(now.year, now.month, now.day),
       lastDate: now.add(const Duration(days: 365)),
     );
-
     if (!mounted) return;
-    if (d != null) setState(() => _date = d);
+    if (picked != null) setState(() => _date = picked);
   }
 
   Future<void> _pickTime() async {
-    final t = await showTimePicker(
+    final picked = await showTimePicker(
       context: context,
       useRootNavigator: true,
       initialTime: _time ?? TimeOfDay.now(),
     );
-
     if (!mounted) return;
-    if (t != null) setState(() => _time = t);
+    if (picked != null) setState(() => _time = picked);
   }
 
   String? get _timeLabel {
@@ -72,7 +93,7 @@ class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
 
   Future<void> _submit() async {
     if (_sending || !_valid) return;
-    final s = ResidentScope.of(context);
+    final state = ResidentScope.of(context);
     final when = DateTime(
       _date!.year,
       _date!.month,
@@ -84,13 +105,20 @@ class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
       snack(context, 'Choose a future date and time.');
       return;
     }
+    final dest = _destination.text.trim();
+    final rawNotes = _notes.text.trim();
+    final combinedNotes = dest.isEmpty
+        ? rawNotes
+        : rawNotes.isEmpty
+        ? 'Destination: $dest'
+        : 'Destination: $dest\n$rawNotes';
     setState(() => _sending = true);
     try {
-      await s.submitSchedule(
+      await state.submitSchedule(
         purpose: _purpose!,
-        address: _destination.text.trim(),
+        address: _address.text.trim(),
         when: when,
-        notes: _notes.text.trim(),
+        notes: combinedNotes,
       );
       if (!mounted) return;
       setState(() {
@@ -98,16 +126,16 @@ class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
         _purpose = null;
         _date = null;
         _time = null;
+        _addressInitialized = false;
+        _address.text = state.profile.address.trim();
+        _addressInitialized = _address.text.isNotEmpty;
         _destination.clear();
         _notes.clear();
       });
-      snack(context, 'Schedule request sent to MDRRMO');
+      snack(context, 'Service request sent to MDRRMO.');
     } catch (error) {
       if (mounted) {
-        snack(
-          context,
-          'Could not send schedule request: ${apiErrorMessage(error)}',
-        );
+        snack(context, 'Could not send request: ${apiErrorMessage(error)}');
       }
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -133,17 +161,11 @@ class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
     }
   }
 
-  Color _statusColor(MdrrmoColors palette, String status) =>
-      switch (status.toLowerCase()) {
-        'confirmed' || 'completed' => palette.success,
-        'declined' || 'cancelled' => palette.danger,
-        _ => palette.warning,
-      };
-
   @override
   Widget build(BuildContext context) {
     final state = ResidentScope.of(context);
     final palette = MdrrmoColors.of(context);
+
     return Column(
       children: [
         Expanded(
@@ -163,16 +185,15 @@ class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const ResidentHeading(
-                        'Community services',
-                        subtitle:
-                            'Plan non-emergency assistance with MDRRMO.',
-                      ),
+                      const ResidentHeading('Services'),
                       Segmented<bool>(
                         value: _creating,
                         onChanged: _sending
                             ? (_) {}
-                            : (v) => setState(() => _creating = v),
+                            : (creating) {
+                                setState(() => _creating = creating);
+                                if (creating) _syncAddressFromProfile();
+                              },
                         options: const [
                           SegmentOption(false, 'My requests'),
                           SegmentOption(true, 'New request'),
@@ -180,133 +201,29 @@ class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
                       ),
                       const SizedBox(height: AppSpacing.lg),
                       if (_creating)
-                        ..._form(context)
+                        ..._buildForm(context)
                       else ...[
                         if (state.schedules.isEmpty)
-                          const ResidentEmptyState(
-                            icon: AppIcons.calendar,
-                            title: 'No service requests yet',
-                            message:
-                                'Choose New request to plan an activity, training, inspection, or standby service.',
-                          ),
-                        for (final request in state.schedules)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: ResidentPanel(
-                              padding: const EdgeInsets.all(14),
-                              onTap: () => Navigator.of(context).push(
+                          _EmptyServicesCard(onRequest: _openNewRequest)
+                        else ...[
+                          for (var i = 0; i < state.schedules.length; i++) ...[
+                            if (i > 0) const SizedBox(height: AppSpacing.sm + 2),
+                            _ScheduleRequestCard(
+                              request: state.schedules[i],
+                              busy: state.isSaving || state.isLoading,
+                              onOpen: () => Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (_) => RecordDetailsScreen(
-                                    id: request.id,
+                                    id: state.schedules[i].id,
                                     schedule: true,
                                     onChanged: state.load,
                                   ),
                                 ),
                               ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Wrap(
-                                    spacing: 10,
-                                    runSpacing: 6,
-                                    alignment: WrapAlignment.spaceBetween,
-                                    crossAxisAlignment:
-                                        WrapCrossAlignment.center,
-                                    children: [
-                                      Text(
-                                        'Request #${request.id}',
-                                        style: MdrrmoTypography.tabular(
-                                          MdrrmoTypography.labelSm.copyWith(
-                                            color: palette.textMuted,
-                                          ),
-                                        ),
-                                      ),
-                                      Pill(
-                                        request.status,
-                                        color: _statusColor(
-                                          palette,
-                                          request.status,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    request.purpose.label,
-                                    style: MdrrmoTypography.titleMd.copyWith(
-                                      color: palette.textPrimary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    request.destination,
-                                    style: MdrrmoTypography.bodySm.copyWith(
-                                      color: palette.textSecondary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Icon(
-                                        AppIcons.calendar,
-                                        size: 16,
-                                        color: palette.brand,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          '${fmtDate(request.when)} · ${fmtTime(request.when)}',
-                                          style: MdrrmoTypography.tabular(
-                                            MdrrmoTypography.bodySm.copyWith(
-                                              fontWeight: FontWeight.w500,
-                                              color: palette.textPrimary,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Container(
-                                    padding: const EdgeInsets.only(top: 8),
-                                    decoration: BoxDecoration(
-                                      border: Border(
-                                        top: BorderSide(color: palette.border),
-                                      ),
-                                    ),
-                                    child: Wrap(
-                                      alignment: WrapAlignment.spaceBetween,
-                                      crossAxisAlignment:
-                                          WrapCrossAlignment.center,
-                                      spacing: 10,
-                                      children: [
-                                        Text(
-                                          'Tap to view details',
-                                          style: MdrrmoTypography.labelSm
-                                              .copyWith(color: palette.brand),
-                                        ),
-                                        if (request.canCancel)
-                                          TextButton(
-                                            style: TextButton.styleFrom(
-                                              foregroundColor: palette.danger,
-                                              minimumSize: const Size(0, 44),
-                                            ),
-                                            onPressed:
-                                                state.isSaving ||
-                                                    state.isLoading
-                                                ? null
-                                                : () => _cancel(request),
-                                            child: const Text('Cancel request'),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
+                              onCancel: () => _cancel(state.schedules[i]),
                             ),
-                          ),
+                          ],
+                        ],
                         PageLoader(
                           hasMore: state.hasMore('schedules'),
                           loading:
@@ -340,9 +257,9 @@ class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
                   AppSpacing.md,
                 ),
                 child: ContentFrame(
-                  child: ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: _destination,
-                    builder: (context, _, _) {
+                  child: ListenableBuilder(
+                    listenable: Listenable.merge([_address, _destination]),
+                    builder: (context, _) {
                       final canSubmit = _valid && state.profile.canSubmit;
                       return Column(
                         mainAxisSize: MainAxisSize.min,
@@ -350,25 +267,22 @@ class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
                         children: [
                           AppButton(
                             label: _sending
-                                ? 'Sending request...'
+                                ? 'Sending...'
                                 : 'Send service request',
-                            icon: AppIcons.send,
                             loading: _sending,
                             onPress: canSubmit && !_sending ? _submit : null,
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            !state.profile.canSubmit
-                                ? 'Service requests are available after account approval.'
-                                : !_valid
-                                ? 'Choose a service, address, date, and time to continue.'
-                                : 'MDRRMO will review and confirm your request.',
-                            textAlign: TextAlign.center,
-                            style: MdrrmoTypography.labelSm.copyWith(
-                              color: palette.textMuted,
-                              fontWeight: FontWeight.w400,
+                          if (!state.profile.canSubmit) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              'Unlocks after account approval.',
+                              textAlign: TextAlign.center,
+                              style: MdrrmoTypography.labelSm.copyWith(
+                                color: palette.textMuted,
+                                fontWeight: FontWeight.w400,
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       );
                     },
@@ -381,137 +295,133 @@ class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
     );
   }
 
-  List<Widget> _form(BuildContext context) {
+  List<Widget> _buildForm(BuildContext context) {
     final palette = MdrrmoColors.of(context);
-    final profile = ResidentScope.of(context).profile;
     final purposes = SchedulePurpose.values;
-    final date = PickerField(
+    final dateField = _SchedulePickerBox(
       label: 'Date',
-      icon: AppIcons.calendar,
       placeholder: 'Choose a date',
       value: _date == null ? null : fmtDate(_date!),
       onTap: _pickDate,
     );
-    final time = PickerField(
+    final timeField = _SchedulePickerBox(
       label: 'Time',
-      icon: AppIcons.clock,
       placeholder: 'Choose a time',
       value: _timeLabel,
       onTap: _pickTime,
     );
+
     return [
       Text(
-        'What service do you need?',
+        'Service type',
         style: MdrrmoTypography.titleMd.copyWith(color: palette.textPrimary),
       ),
-      const SizedBox(height: 10),
-      for (var i = 0; i < purposes.length; i += 2)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _PurposeChip(
-                  purposes[i],
-                  selected: _purpose == purposes[i],
-                  onTap: () => setState(() => _purpose = purposes[i]),
-                ),
-              ),
-              const SizedBox(width: 10),
-              if (i + 1 < purposes.length)
-                Expanded(
-                  child: _PurposeChip(
-                    purposes[i + 1],
-                    selected: _purpose == purposes[i + 1],
-                    onTap: () => setState(() => _purpose = purposes[i + 1]),
+      const SizedBox(height: AppSpacing.sm + 2),
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final singleColumn =
+              constraints.maxWidth < 300 ||
+              MediaQuery.textScalerOf(context).scale(1) > 1.35;
+          if (singleColumn) {
+            return Column(
+              children: [
+                for (var i = 0; i < purposes.length; i++) ...[
+                  if (i > 0) const SizedBox(height: AppSpacing.sm),
+                  _PurposeOptionTile(
+                    purposes[i],
+                    selected: _purpose == purposes[i],
+                    onTap: () => setState(() => _purpose = purposes[i]),
                   ),
-                )
-              else
-                const Expanded(child: SizedBox.shrink()),
+                ],
+              ],
+            );
+          }
+          return Column(
+            children: [
+              for (var i = 0; i < purposes.length; i += 2) ...[
+                if (i > 0) const SizedBox(height: AppSpacing.sm),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: _PurposeOptionTile(
+                        purposes[i],
+                        selected: _purpose == purposes[i],
+                        onTap: () => setState(() => _purpose = purposes[i]),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    if (i + 1 < purposes.length)
+                      Expanded(
+                        child: _PurposeOptionTile(
+                          purposes[i + 1],
+                          selected: _purpose == purposes[i + 1],
+                          onTap: () =>
+                              setState(() => _purpose = purposes[i + 1]),
+                        ),
+                      )
+                    else
+                      const Expanded(child: SizedBox.shrink()),
+                  ],
+                ),
+              ],
             ],
-          ),
-        ),
-      const SizedBox(height: 10),
+          );
+        },
+      ),
+      const SizedBox(height: AppSpacing.lg),
       ResidentPanel(
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Where and when',
-              style: MdrrmoTypography.titleMd.copyWith(
-                color: palette.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 14),
-            AppTextField(
-              controller: _destination,
-              label: 'Service address',
-              hint: 'Street, barangay, or landmark',
-              maxLength: 255,
-              textInputAction: TextInputAction.done,
-            ),
-            const SizedBox(height: 14),
             LayoutBuilder(
               builder: (context, constraints) {
-                if (constraints.maxWidth < 340 ||
-                    MediaQuery.textScalerOf(context).scale(1) > 1.2) {
+                if (constraints.maxWidth < 320 ||
+                    MediaQuery.textScalerOf(context).scale(1) > 1.25) {
                   return Column(
-                    children: [date, const SizedBox(height: 14), time],
+                    children: [
+                      dateField,
+                      const SizedBox(height: AppSpacing.md),
+                      timeField,
+                    ],
                   );
                 }
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: date),
-                    const SizedBox(width: 12),
-                    Expanded(child: time),
+                    Expanded(child: dateField),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(child: timeField),
                   ],
                 );
               },
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: AppSpacing.md + 2),
+            AppTextField(
+              controller: _address,
+              label: 'Address',
+              hint: 'Street, barangay, or landmark',
+              maxLength: 255,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: AppSpacing.md + 2),
+            AppTextField(
+              controller: _destination,
+              label: 'Destination',
+              hint: 'Facility or drop-off location',
+              maxLength: 255,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: AppSpacing.md + 2),
             AppTextField(
               controller: _notes,
-              label: 'Additional details',
-              hint: 'Anything MDRRMO should know?',
+              label: 'Notes',
+              hint: 'Extra details for MDRRMO',
               required: false,
               maxLength: 1000,
-              maxLines: 3,
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 14),
-      ResidentPanel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Your contact details',
-              style: MdrrmoTypography.titleMd.copyWith(
-                color: palette.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'From your resident account',
-              style: MdrrmoTypography.labelSm.copyWith(
-                color: palette.textMuted,
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-            const SizedBox(height: 14),
-            LockedField(
-              label: 'Name',
-              icon: AppIcons.user,
-              value: profile.name,
-            ),
-            const SizedBox(height: 10),
-            LockedField(
-              label: 'Contact number',
-              icon: AppIcons.phone,
-              value: profile.contact,
+              maxLines: 2,
+              textInputAction: TextInputAction.done,
             ),
           ],
         ),
@@ -520,8 +430,138 @@ class _ResidentScheduleScreenState extends State<ResidentScheduleScreen> {
   }
 }
 
-class _PurposeChip extends StatelessWidget {
-  const _PurposeChip(
+class _EmptyServicesCard extends StatelessWidget {
+  const _EmptyServicesCard({required this.onRequest});
+
+  final VoidCallback onRequest;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = MdrrmoColors.of(context);
+    return Surface(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.xxl,
+      ),
+      child: Column(
+        children: [
+          Text(
+            'No service requests yet',
+            textAlign: TextAlign.center,
+            style: MdrrmoTypography.titleMd.copyWith(
+              color: palette.textPrimary,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Schedule ambulance standby, training, or community support.',
+            textAlign: TextAlign.center,
+            style: MdrrmoTypography.bodySm.copyWith(
+              color: palette.textSecondary,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+          AppButton(
+            label: 'Request a service',
+            kind: AppButtonKind.secondary,
+            onPress: onRequest,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScheduleRequestCard extends StatelessWidget {
+  const _ScheduleRequestCard({
+    required this.request,
+    required this.busy,
+    required this.onOpen,
+    required this.onCancel,
+  });
+
+  final ScheduleRequest request;
+  final bool busy;
+  final VoidCallback onOpen;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = MdrrmoColors.of(context);
+    final (statusLabel, statusColor, _) = residentStatusPresentation(
+      request.status,
+      palette,
+      schedule: true,
+    );
+
+    return Surface(
+      padding: const EdgeInsets.all(AppSpacing.md + 2),
+      onTap: onOpen,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
+            children: [
+              Text(
+                request.purpose.label,
+                style: MdrrmoTypography.titleMd.copyWith(
+                  color: palette.textPrimary,
+                ),
+              ),
+              AppStatusBadge(statusLabel, color: statusColor, dot: true),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${fmtDate(request.when)} · ${fmtTime(request.when)}',
+            style: MdrrmoTypography.tabular(
+              MdrrmoTypography.bodySm.copyWith(
+                fontWeight: FontWeight.w600,
+                color: palette.textPrimary,
+              ),
+            ),
+          ),
+          if (request.destination.trim().isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(
+              request.destination,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: MdrrmoTypography.bodySm.copyWith(
+                color: palette.textSecondary,
+              ),
+            ),
+          ],
+          if (request.canCancel) ...[
+            const SizedBox(height: AppSpacing.sm + 2),
+            Divider(height: 1, color: palette.border),
+            const SizedBox(height: 2),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: palette.danger,
+                  minimumSize: const Size(0, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                ),
+                onPressed: busy ? null : onCancel,
+                child: const Text('Cancel request'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PurposeOptionTile extends StatelessWidget {
+  const _PurposeOptionTile(
     this.purpose, {
     required this.selected,
     required this.onTap,
@@ -540,9 +580,7 @@ class _PurposeChip extends StatelessWidget {
       selected: selected,
       label: purpose.label,
       child: Material(
-        color: selected
-            ? palette.brandTint.withValues(alpha: palette.isDark ? 0.5 : 0.7)
-            : palette.surface,
+        color: selected ? palette.brandTint : palette.surface,
         borderRadius: BorderRadius.circular(AppRadius.sm),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -550,8 +588,11 @@ class _PurposeChip extends StatelessWidget {
           onTap: onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
-            constraints: const BoxConstraints(minHeight: 52),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            constraints: const BoxConstraints(minHeight: 50),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm + 2,
+            ),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(AppRadius.sm),
               border: Border.all(
@@ -561,8 +602,15 @@ class _PurposeChip extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(purpose.icon, size: 19, color: purpose.color),
-                const SizedBox(width: 8),
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selected ? palette.brand : purpose.color,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm + 2),
                 Expanded(
                   child: Text(
                     purpose.label,
@@ -577,6 +625,71 @@ class _PurposeChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SchedulePickerBox extends StatelessWidget {
+  const _SchedulePickerBox({
+    required this.label,
+    required this.placeholder,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String label;
+  final String placeholder;
+  final String? value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = MdrrmoColors.of(context);
+    final selected = value != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: MdrrmoTypography.bodySm.copyWith(
+            fontWeight: FontWeight.w600,
+            color: palette.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Semantics(
+          button: true,
+          label: '$label, ${value ?? placeholder}',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            onTap: onTap,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 48),
+              width: double.infinity,
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              decoration: BoxDecoration(
+                color: palette.surface,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                border: Border.all(
+                  color: selected
+                      ? palette.brand.withValues(alpha: 0.55)
+                      : palette.border,
+                ),
+              ),
+              child: Text(
+                value ?? placeholder,
+                style: MdrrmoTypography.tabular(
+                  MdrrmoTypography.bodyMd.copyWith(
+                    color: selected ? palette.textPrimary : palette.textMuted,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

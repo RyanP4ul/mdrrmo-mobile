@@ -23,13 +23,7 @@ class ResponderPanel extends StatelessWidget {
       padding: padding,
       onTap: onTap,
       radius: AppRadius.md,
-      borderColor: accent?.withValues(alpha: palette.isDark ? 0.40 : 0.32),
-      tint: accent != null
-          ? Color.alphaBlend(
-              accent!.withValues(alpha: palette.isDark ? 0.08 : 0.04),
-              palette.surface,
-            )
-          : null,
+      borderColor: accent?.withValues(alpha: palette.isDark ? 0.42 : 0.32),
       child: child,
     );
   }
@@ -106,16 +100,18 @@ class ResponderShortcut extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
     final enabled = onTap != null;
-    return Surface(
-      padding: EdgeInsets.zero,
-      tint: enabled ? palette.surface : palette.surfaceSubtle,
+    return ColoredBox(
+      color: enabled ? palette.surface : palette.surfaceSubtle,
       child: AppRowItem(
         title: title,
         subtitle: subtitle,
         enabled: enabled,
         onTap: onTap,
         showChevron: true,
-        padding: const EdgeInsets.all(AppSpacing.md + 2),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md,
+        ),
         leading: Container(
           width: 40,
           height: 40,

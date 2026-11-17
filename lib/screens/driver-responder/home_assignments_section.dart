@@ -81,29 +81,13 @@ class _HomeAssignmentsSectionState extends State<HomeAssignmentsSection> {
     }
   }
 
-  Future<void> _refresh() async {
-    await Future.wait([
-      _load(),
-      if (widget.onRefreshAssignments != null) widget.onRefreshAssignments!(),
-    ]);
-  }
-
   @override
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ResponderHeading(
-          'Assignments',
-          subtitle: 'Emergency responses and scheduled services.',
-          trailing: IconButton(
-            tooltip: 'Refresh assignments',
-            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-            onPressed: _loading ? null : _refresh,
-            icon: const Icon(AppIcons.refresh, size: 18),
-          ),
-        ),
+        const ResponderHeading('Assignments'),
         Column(
           key: const ValueKey('home-assignments-container'),
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -121,11 +105,30 @@ class _HomeAssignmentsSectionState extends State<HomeAssignmentsSection> {
                 _services.isEmpty &&
                 !_loading &&
                 _error == null)
-              const ResponderEmptyState(
-                icon: AppIcons.stethoscope,
-                title: 'No assignments yet',
-                message:
-                    'Emergency responses and confirmed scheduled services will appear here.',
+              Surface(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.lg,
+                  vertical: AppSpacing.xl,
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'No assignments yet',
+                      textAlign: TextAlign.center,
+                      style: MdrrmoTypography.titleMd.copyWith(
+                        color: palette.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Dispatches and confirmed services appear here.',
+                      textAlign: TextAlign.center,
+                      style: MdrrmoTypography.bodySm.copyWith(
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             for (final assignment in widget.activeAssignments)
               Padding(
@@ -138,6 +141,7 @@ class _HomeAssignmentsSectionState extends State<HomeAssignmentsSection> {
                 child: ServiceScheduleCard(
                   schedule: service,
                   showType: true,
+                  onUpdated: _load,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => RecordDetailsScreen(

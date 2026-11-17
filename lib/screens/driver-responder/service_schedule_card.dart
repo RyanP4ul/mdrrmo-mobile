@@ -9,18 +9,42 @@ class ServiceScheduleCard extends StatelessWidget {
     super.key,
     required this.schedule,
     required this.onTap,
+    this.onUpdated,
     this.showType = false,
   });
 
   final Map<String, dynamic> schedule;
   final VoidCallback onTap;
+  final Future<void> Function()? onUpdated;
   final bool showType;
 
   @override
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
-    final status = '${schedule['status'] ?? 'Unknown'}';
-    final statusColor = switch (status.toLowerCase()) {
+    final rawStatus = '${schedule['status'] ?? 'Unknown'}'.trim();
+    final normalized = rawStatus.toLowerCase();
+    final statusLabel = rawStatus.isEmpty
+        ? 'Unknown'
+        : '${rawStatus[0].toUpperCase()}${rawStatus.substring(1)}';
+    final pickup = '${schedule['pickup_address'] ?? schedule['address'] ?? ''}'
+        .trim();
+    final destination = extractScheduleDestination(schedule);
+    final date = '${schedule['preferred_date'] ?? ''}'.trim();
+    final time = '${schedule['preferred_time'] ?? ''}'.trim();
+    final whenText = [
+      if (date.isNotEmpty) date,
+      if (time.isNotEmpty) time,
+    ].join(' · ');
+    final resident = '${schedule['resident'] ?? ''}'.trim();
+    final contact = '${schedule['contact'] ?? ''}'.trim();
+    final notes = '${schedule['notes'] ?? ''}'.trim();
+    final canNavigate = const [
+      'confirmed',
+      'en-route',
+      'on-scene',
+    ].contains(normalized);
+
+    final statusColor = switch (normalized) {
       'confirmed' => palette.success,
       'en-route' || 'on-scene' || 'completed' => palette.brand,
       'declined' || 'cancelled' => palette.danger,
@@ -33,129 +57,145 @@ class ServiceScheduleCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (showType)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: ResponderTag(
-                  'SCHEDULED SERVICE',
-                  icon: AppIcons.calendar,
-                ),
-              ),
-            ),
           Wrap(
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 10,
-            runSpacing: 6,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
             children: [
               Text(
-                '${schedule['team_name'] ?? 'Response team'}',
-                style: MdrrmoTypography.labelSm.copyWith(
-                  color: palette.textMuted,
+                '${schedule['service_type'] ?? 'Service request'}',
+                style: MdrrmoTypography.titleMd.copyWith(
+                  color: palette.textPrimary,
                 ),
               ),
-              ResponderTag(
-                status,
-                color: statusColor,
-                icon: AppIcons.infoCircle,
-              ),
+              ResponderTag(statusLabel, color: statusColor),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpacing.sm),
           Text(
-            '${schedule['service_type'] ?? 'Service request'}',
-            style: MdrrmoTypography.titleMd.copyWith(
+            pickup.isEmpty
+                ? 'Pickup address not provided'
+                : (destination.isNotEmpty ? 'Pickup: $pickup' : pickup),
+            style: MdrrmoTypography.bodyMd.copyWith(
+              fontWeight: FontWeight.w500,
               color: palette.textPrimary,
             ),
           ),
-          const SizedBox(height: 10),
-          _ServiceDetail(
-            icon: AppIcons.pin,
-            text: '${schedule['address'] ?? 'Destination not provided'}',
-          ),
-          const SizedBox(height: 6),
-          _ServiceDetail(
-            icon: AppIcons.calendar,
-            text:
-                '${schedule['preferred_date'] ?? 'Date not provided'} · ${schedule['preferred_time'] ?? 'Time not provided'}',
-          ),
-          const SizedBox(height: 6),
-          _ServiceDetail(
-            icon: AppIcons.user,
-            text: '${schedule['resident'] ?? 'Resident not provided'}',
-          ),
-          if (schedule['contact'] != null &&
-              '${schedule['contact']}'.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            _ServiceDetail(
-              icon: AppIcons.phone,
-              text: '${schedule['contact']}',
-            ),
-          ],
-          if (schedule['notes'] != null &&
-              '${schedule['notes']}'.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            _ServiceDetail(
-              icon: AppIcons.form,
-              text: '${schedule['notes']}',
-            ),
-          ],
-          const SizedBox(height: 12),
-          Divider(height: 1, color: palette.border),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 8,
-            children: [
-              TextButton.icon(
-                style: TextButton.styleFrom(minimumSize: const Size(0, 48)),
-                onPressed: onTap,
-                icon: const Icon(AppIcons.form, size: 17),
-                label: const Text('Details and progress'),
+          if (destination.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              'Destination: $destination',
+              style: MdrrmoTypography.bodySm.copyWith(
+                color: palette.textSecondary,
               ),
-              if (['confirmed', 'en-route', 'on-scene']
-                  .contains(status.toLowerCase()))
-                TextButton.icon(
-                  style: TextButton.styleFrom(minimumSize: const Size(0, 48)),
+            ),
+          ],
+          if (whenText.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              whenText,
+              style: MdrrmoTypography.tabular(
+                MdrrmoTypography.bodySm.copyWith(
+                  color: palette.textSecondary,
+                ),
+              ),
+            ),
+          ],
+          if (resident.isNotEmpty || contact.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: 2,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (resident.isNotEmpty)
+                  Text(
+                    resident,
+                    style: MdrrmoTypography.bodySm.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                if (contact.isNotEmpty)
+                  Text(
+                    contact,
+                    style: MdrrmoTypography.tabular(
+                      MdrrmoTypography.bodySm.copyWith(
+                        color: palette.textMuted,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          if (notes.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.sm,
+              ),
+              decoration: BoxDecoration(
+                color: palette.surfaceSubtle,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
+              child: Text(
+                notes,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: MdrrmoTypography.bodySm.copyWith(
+                  color: palette.textSecondary,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.md),
+          Divider(height: 1, color: palette.border),
+          const SizedBox(height: AppSpacing.sm + 2),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (canNavigate)
+                FilledButton.tonal(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 44),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                    ),
+                  ),
                   onPressed: () => navigateToDestination(
                     context,
-                    address: '${schedule['address'] ?? ''}',
+                    address: normalized == 'on-scene' && destination.isNotEmpty
+                        ? destination
+                        : pickup,
+                    schedule: scheduleNavFromRecord(
+                      schedule,
+                      onStatusUpdated: onUpdated,
+                    ),
                   ),
-                  icon: const Icon(AppIcons.navigation, size: 17),
-                  label: const Text('Navigate'),
+                  child: Text(
+                    normalized == 'on-scene'
+                        ? 'Navigate to destination'
+                        : 'Navigate to pickup',
+                  ),
                 ),
+              TextButton(
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 44),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                  ),
+                ),
+                onPressed: onTap,
+                child: const Text('Details and progress'),
+              ),
             ],
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ServiceDetail extends StatelessWidget {
-  const _ServiceDetail({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = MdrrmoColors.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 17, color: palette.brand),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: MdrrmoTypography.bodySm.copyWith(
-              color: palette.textPrimary,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

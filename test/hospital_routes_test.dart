@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart' as gmaps;
 import 'package:latlong2/latlong.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:mdrrmo_flutter/data/api/driver_service.api.dart';
@@ -109,7 +110,15 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(api.requestedReports, [22]);
-      expect(find.byTooltip('Bulacan Medical Center'), findsOneWidget);
+      final mapWidget = tester.widget<gmaps.GoogleMap>(
+        find.byType(gmaps.GoogleMap),
+      );
+      expect(
+        mapWidget.markers.any(
+          (m) => m.infoWindow.title == 'Bulacan Medical Center',
+        ),
+        isTrue,
+      );
       expect(routing.destinations.last, incident);
       await tester.tap(find.text('Recommended hospitals'));
       await tester.pumpAndSettle();

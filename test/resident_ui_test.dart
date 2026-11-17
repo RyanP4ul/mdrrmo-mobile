@@ -18,8 +18,15 @@ import 'package:mdrrmo_flutter/screens/resident/report_screen.dart';
 import 'package:mdrrmo_flutter/screens/resident/home_screen.dart';
 import 'package:mdrrmo_flutter/screens/resident/resident_widgets.dart';
 import 'package:mdrrmo_flutter/state/resident_state.dart';
+import 'package:mdrrmo_flutter/screens/sos_screen.dart';
+import 'package:mdrrmo_flutter/screens/voice_calls_screen.dart';
 import 'package:mdrrmo_flutter/services/incident_location.dart';
+import 'package:mdrrmo_flutter/services/internet_connection.dart';
+import 'package:mdrrmo_flutter/services/voice_calls.dart';
 import 'package:mdrrmo_flutter/ui/kit.dart';
+
+import 'sos_call_test.dart' show SosCallsApi;
+import 'voice_calls_test.dart' show FakeTransport;
 
 class FakeIncidentLocation implements IncidentLocationSource {
   FakeIncidentLocation(this.read);
@@ -281,8 +288,8 @@ void main() {
       await tester.tap(find.byIcon(AppIcons.more));
       await tester.pumpAndSettle();
       expect(find.text('Account & profile'), findsNothing);
-      expect(find.text('Search records'), findsOneWidget);
-      expect(find.text('Unconfirmed submissions'), findsOneWidget);
+      expect(find.text('Search records'), findsNothing);
+      expect(find.text('Unconfirmed submissions'), findsNothing);
       expect(find.text('Refresh information'), findsOneWidget);
       expect(find.text('Community advisories'), findsNothing);
       expect(find.text('Log out'), findsOneWidget);
@@ -392,8 +399,6 @@ void main() {
       final sos = find.byKey(const ValueKey('resident-sos-button'));
       final report = find.text('Report an incident');
       expect(tester.getTopLeft(sos).dy, lessThan(tester.getTopLeft(report).dy));
-      final button = tester.widget<FilledButton>(sos);
-      expect(button.style!.shape!.resolve({}), isA<CircleBorder>());
       await tester.tap(sos);
       expect(sosCalls, 1);
       expect(reports, 0);
@@ -414,6 +419,8 @@ void main() {
     (tester) async {
       final resident = state(ResidentUiApi());
       await tester.pumpWidget(residentApp(resident));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Report an incident'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Report an incident'));
       await tester.pumpAndSettle();
@@ -450,18 +457,22 @@ void main() {
         residentApp(resident, child: const ResidentScheduleScreen()),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Request #8'), findsOneWidget);
-      expect(find.text('Service address'), findsNothing);
+      expect(find.text('Medical Mission'), findsOneWidget);
+      expect(find.text('Address'), findsNothing);
       await tester.tap(find.text('Cancel request'));
       await tester.pumpAndSettle();
       expect(find.text('Cancel service request?'), findsOneWidget);
       await tester.tap(find.widgetWithText(FilledButton, 'Cancel request').last);
       await tester.pumpAndSettle();
       expect(api.cancelled, 8);
-      expect(find.text('cancelled'), findsOneWidget);
+      expect(find.text('Cancelled'), findsOneWidget);
       await tester.tap(find.text('New request'));
       await tester.pumpAndSettle();
-      expect(find.text('Service address'), findsOneWidget);
+      expect(find.text('Service address'), findsNothing);
+      expect(find.text('Address'), findsOneWidget);
+      expect(find.text('Destination'), findsOneWidget);
+      expect(find.text('Destination (optional)'), findsNothing);
+      expect(find.text('Barangay San Juan'), findsOneWidget);
       final submit = tester.widget<FilledButton>(
         find.widgetWithText(FilledButton, 'Send service request'),
       );
@@ -496,6 +507,88 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       resident.dispose();
+    },
+  );
+
+  testWidgets(
+    'home SOS starts internet call in-place without redirecting and has Call Hotline Now below',
+    (tester) async {
+      final resident = state(ResidentUiApi());
+      final api = SosCallsApi();
+      final connection = InternetConnection(
+        probe: () async => true,
+        initiallyOnline: true,
+      );
+      final voice = VoiceCallController(
+        api: api,
+        connection: connection,
+        transport: FakeTransport.new,
+        microphonePermission: () async => true,
+      );
+      Uri? dialed;
+
+      await tester.pumpWidget(
+        residentApp(
+          resident,
+          child: ResidentHomeScreen(
+            onOpenReport: () {},
+            onOpenReports: () {},
+            onOpenServices: () {},
+            connection: connection,
+            phoneNumber: '09171234567',
+            dial: (uri) async {
+              dialed = uri;
+              return true;
+            },
+            voiceFactory: () => voice,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final sos = find.byKey(const ValueKey('resident-sos-button'));
+      final hotline = find.byKey(const ValueKey('resident-call-hotline-button'));
+      expect(sos, findsOneWidget);
+      expect(hotline, findsOneWidget);
+      expect(find.text('Call Hotline Now'), findsOneWidget);
+      expect(tester.getSize(sos).height, greaterThanOrEqualTo(48));
+      expect(
+        tester.getTopLeft(hotline).dy,
+        greaterThan(tester.getTopLeft(sos).dy),
+      );
+
+      // Tapping Call Hotline Now dials without leaving the home screen.
+      await tester.ensureVisible(hotline);
+      await tester.pumpAndSettle();
+      await tester.tap(hotline);
+      await tester.pumpAndSettle();
+      expect(dialed, Uri(scheme: 'tel', path: '09171234567'));
+      expect(find.byType(SosScreen), findsNothing);
+
+      // Tapping SOS starts the internet call in-place without redirecting.
+      await tester.ensureVisible(sos);
+      await tester.pumpAndSettle();
+      await tester.tap(sos);
+      await tester.pumpAndSettle();
+
+      expect(api.starts, 1);
+      expect(voice.phase, VoicePhase.connected);
+      expect(find.byType(SosScreen), findsNothing);
+      expect(find.byType(VoiceCallsScreen), findsNothing);
+      expect(find.byType(ResidentHomeScreen), findsOneWidget);
+      expect(find.text('Mute'), findsOneWidget);
+      expect(find.text('Speaker on'), findsOneWidget);
+      expect(find.text('End call'), findsOneWidget);
+
+      await tester.tap(find.text('End call'));
+      await tester.pumpAndSettle();
+      expect(api.ended, isTrue);
+      expect(voice.phase, VoicePhase.idle);
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox());
+      resident.dispose();
+      connection.dispose();
     },
   );
 }

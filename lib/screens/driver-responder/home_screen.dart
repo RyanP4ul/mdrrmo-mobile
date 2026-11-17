@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../data/models.dart';
 import '../../services/driver_realtime.dart';
 import '../../services/driver_tracking.dart';
+import '../../services/internet_connection.dart';
+import '../../services/pending_submissions.dart';
 import '../../services/route_navigation.dart';
 import '../../state/driver_responder_state.dart';
 import '../../ui/kit.dart';
@@ -36,16 +38,36 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _map = MapController();
   int _servicesRefreshKey = 0;
+  int _pendingSyncCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    PendingSubmissions.changes.addListener(_loadPendingCount);
+    _loadPendingCount();
+  }
+
+  Future<void> _loadPendingCount() async {
+    try {
+      final list = await PendingSubmissions.read();
+      if (mounted) setState(() => _pendingSyncCount = list.length);
+    } catch (_) {}
+  }
 
   @override
   void dispose() {
+    PendingSubmissions.changes.removeListener(_loadPendingCount);
     _map.dispose();
     super.dispose();
   }
 
   Future<void> _refresh(ResponderState state) async {
     try {
-      await Future.wait([state.load(), widget.realtime.refreshFleet()]);
+      await Future.wait([
+        state.load(),
+        widget.realtime.refreshFleet(),
+        _loadPendingCount(),
+      ]);
       if (mounted) setState(() => _servicesRefreshKey++);
     } catch (error) {
       if (mounted) snack(context, apiErrorMessage(error));
@@ -54,7 +76,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([widget.realtime, widget.tracking]),
+    listenable: Listenable.merge([
+      widget.realtime,
+      widget.tracking,
+      InternetConnection.instance,
+    ]),
     builder: (context, _) => _content(context),
   );
 
@@ -84,32 +110,31 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.xs,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            name.isEmpty
-                                ? 'Ready when it matters.'
-                                : 'Hello, $name',
-                            style: MdrrmoTypography.displaySm.copyWith(
-                              color: palette.textPrimary,
-                            ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          name.isEmpty ? 'Dispatch' : 'Hello, $name',
+                          style: MdrrmoTypography.displaySm.copyWith(
+                            color: palette.textPrimary,
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            fmtDate(DateTime.now()),
-                            style: MdrrmoTypography.bodySm.copyWith(
-                              color: palette.textMuted,
-                            ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          fmtDate(DateTime.now()),
+                          style: MdrrmoTypography.bodySm.copyWith(
+                            color: palette.textMuted,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: AppSpacing.sm),
                     ResponderTag(
                       !state.hasLoaded ? 'Loading' : state.profile.status,
                       color: !state.hasLoaded
@@ -122,7 +147,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.md),
+                _ConnectionStrip(
+                  realtime: widget.realtime,
+                  tracking: widget.tracking,
+                ),
+                const SizedBox(height: AppSpacing.md),
                 if (!state.hasLoaded && state.isLoading)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -134,18 +164,27 @@ class _HomeScreenState extends State<HomeScreen> {
                   AppBanner(
                     tone: AppBannerTone.warning,
                     icon: AppIcons.wifiOff,
-                    title: 'Your information could not be refreshed.',
+                    title: 'Could not refresh assignments',
                     message: apiErrorMessage(state.loadError!),
                     action: Align(
                       alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
+                      child: TextButton(
                         onPressed: state.isLoading
                             ? null
                             : () => _refresh(state),
-                        icon: const Icon(AppIcons.refresh, size: 16),
-                        label: const Text('Try again'),
+                        child: const Text('Try again'),
                       ),
                     ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+                if (_pendingSyncCount > 0) ...[
+                  AppBanner(
+                    tone: AppBannerTone.warning,
+                    icon: AppIcons.upload,
+                    title:
+                        '$_pendingSyncCount unsynced ${_pendingSyncCount == 1 ? 'report' : 'reports'}',
+                    message: 'Saved locally and waiting to sync.',
                   ),
                   const SizedBox(height: AppSpacing.md),
                 ],
@@ -154,7 +193,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     tone: AppBannerTone.info,
                     icon: AppIcons.info,
                     message:
-                        'Dispatches on Home are available to the team Driver. You are currently a Responder. Check Team to see the current Driver.',
+                        'Dispatches on Home are available to the team Driver. Switch role in Team if needed.',
                   ),
                   const SizedBox(height: AppSpacing.md),
                 ],
@@ -185,93 +224,75 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ),
-                          onDriverForm: state.isDriver
-                              ? () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => ResponderScope(
-                                      state: state,
-                                      child: DriverFormScreen(
-                                        initialReportId: item.id,
-                                        initialAssignment: item,
-                                      ),
-                                    ),
-                                  ),
-                                )
-                              : null,
                         ),
                     ],
                   ),
                 const SizedBox(height: AppSpacing.xl),
-                const ResponderHeading(
-                  'Around you',
-                  subtitle: 'Your location and the assigned incident.',
-                ),
+                const ResponderHeading('Around you'),
                 _MapHero(
                   controller: _map,
                   state: state,
                   positions: widget.realtime.positions,
                   devicePosition: MapLocationScope.of(context),
                 ),
-                const SizedBox(height: AppSpacing.md),
-                _ConnectionCard(
-                  realtime: widget.realtime,
-                  tracking: widget.tracking,
-                ),
                 const SizedBox(height: AppSpacing.xl),
-                const ResponderHeading('Tools & support'),
-                if (state.isDriver) ...[
-                  ResponderShortcut(
-                    icon: AppIcons.badgeCheck,
-                    title: 'Authorization & fuel form',
-                    subtitle: 'Driver Form: passenger and fuel log',
-                    onTap: ready
-                        ? () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ResponderScope(
-                                state: state,
-                                child: DriverFormScreen(
-                                  initialReportId: state.assignment?.id,
-                                  initialAssignment: state.assignment,
+                const ResponderHeading('Tools'),
+                AppSectionGroup(
+                  children: [
+                    if (state.isDriver) ...[
+                      AppRowItem(
+                        title: 'Driver Form',
+                        subtitle: 'Trip authorization and fuel log',
+                        showChevron: true,
+                        enabled: ready,
+                        onTap: ready
+                            ? () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ResponderScope(
+                                    state: state,
+                                    child: DriverFormScreen(
+                                      initialReportId: state.assignment?.id,
+                                      initialAssignment: state.assignment,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  ResponderShortcut(
-                    icon: AppIcons.wrench,
-                    title: 'Maintenance Report',
-                    subtitle: 'Report ambulance issues (Driver only)',
-                    color: palette.warningIcon,
-                    onTap: ready
-                        ? () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ResponderScope(
-                                state: state,
-                                child: const MaintenanceFormScreen(),
-                              ),
-                            ),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                ],
-                ResponderShortcut(
-                  icon: AppIcons.pin,
-                  title: 'Report an emergency',
-                  subtitle: 'Send a new incident to dispatch',
-                  color: palette.danger,
-                  onTap: ready
-                      ? () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => ResponderScope(
-                              state: state,
-                              child: const EmergencyFormScreen(),
-                            ),
-                          ),
-                        )
-                      : null,
+                              )
+                            : null,
+                      ),
+                      AppRowItem(
+                        title: 'Maintenance Report',
+                        subtitle: 'Report an ambulance issue',
+                        showChevron: true,
+                        enabled: ready,
+                        onTap: ready
+                            ? () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ResponderScope(
+                                    state: state,
+                                    child: const MaintenanceFormScreen(),
+                                  ),
+                                ),
+                              )
+                            : null,
+                      ),
+                    ] else
+                      AppRowItem(
+                        title: 'Report an emergency',
+                        subtitle: 'Send a field incident to dispatch',
+                        showChevron: true,
+                        enabled: ready,
+                        onTap: ready
+                            ? () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ResponderScope(
+                                    state: state,
+                                    child: const EmergencyFormScreen(),
+                                  ),
+                                ),
+                              )
+                            : null,
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -286,36 +307,86 @@ class _HomeScreenState extends State<HomeScreen> {
     ResponderState state,
     Assignment assignment,
   ) async {
-    final isCompleting = assignment.step == 2;
-    if (isCompleting) {
+    final step = assignment.step;
+    if (step == 1) return; // En route -> On scene is automatic within 5m.
+
+    if (step == 3) {
+      if (assignment.hospitalId == null) {
+        await navigateToDestination(
+          context,
+          latitude: assignment.latitude,
+          longitude: assignment.longitude,
+          address: assignment.pickup,
+          reportId: assignment.id,
+          responderState: state,
+        );
+        return;
+      }
       final confirmed = await confirmDialog(
         context,
-        title: 'Complete dispatch?',
+        title: 'Arrived at hospital?',
         body:
-            'This closes the assignment and moves it to History. Make sure the response is complete.',
-        confirmLabel: 'Complete dispatch',
+            'This confirms arrival at the hospital and moves the dispatch to History.',
+        confirmLabel: 'Arrived',
       );
       if (!confirmed) return;
     }
+
+    int? hospitalId;
+    String? destination;
+    if (step == 2) {
+      final hospitals = await state.api.fetchHospitals(assignment.id);
+      final nearest = hospitals.where((h) => h.isAvailable).firstOrNull;
+      if (nearest == null) {
+        if (context.mounted) {
+          snack(
+            context,
+            'No available hospital found. Open Navigate to review hospitals.',
+          );
+        }
+        return;
+      }
+      hospitalId = nearest.id;
+      destination = nearest.name;
+    }
+
     try {
       state.selectAssignment(assignment.id);
-      await state.advanceAssignment();
+      await state.advanceAssignment(
+        hospitalId: hospitalId,
+        destination: destination,
+      );
       if (!context.mounted) return;
       final resolved =
-          isCompleting &&
+          step == 3 &&
           !state.assignments.any((item) => item.id == assignment.id);
       snack(
         context,
-        state.assignment == null
-            ? 'Dispatch completed. Saved to History.'
+        step == 0
+            ? 'Dispatch acknowledged. Starting navigation...'
+            : step == 2
+            ? 'Transporting to ${destination ?? 'nearest hospital'}.'
+            : state.assignment == null
+            ? 'Arrived at hospital. Dispatch saved to History.'
             : 'Dispatch progress updated.',
       );
+      if (step == 0 || step == 2) {
+        await navigateToDestination(
+          context,
+          latitude: assignment.latitude,
+          longitude: assignment.longitude,
+          address: assignment.pickup,
+          reportId: assignment.id,
+          responderState: state,
+        );
+        return;
+      }
       if (resolved && state.isDriver && context.mounted) {
         final fillNow = await confirmDialog(
           context,
           title: 'Fill up Driver Form?',
           body:
-              'Emergency Response #${assignment.id} is resolved. Would you like to fill up the Driver Form now? (You can also fill it later from Dispatch or Tools & support.)',
+              'Emergency Response #${assignment.id} is resolved. Would you like to fill up the Driver Form now?',
           confirmLabel: 'Fill Driver Form',
         );
         if (fillNow && context.mounted) {
@@ -351,13 +422,11 @@ class ResponderAssignmentCard extends StatelessWidget {
     required this.enabled,
     required this.onAdvance,
     required this.onDetails,
-    this.onDriverForm,
   });
 
   final Assignment assignment;
   final bool busy, enabled;
   final VoidCallback onAdvance, onDetails;
-  final VoidCallback? onDriverForm;
 
   Future<void> _navigate(BuildContext context) => navigateToDestination(
     context,
@@ -370,231 +439,118 @@ class ResponderAssignmentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
-    final step = assignment.step.clamp(0, 2);
+    final step = assignment.step.clamp(0, Assignment.steps.length - 1);
     final hasLocation =
         assignment.latitude != null && assignment.longitude != null;
 
     return ResponderPanel(
-      accent: palette.brand,
       padding: const EdgeInsets.all(AppSpacing.lg),
+      onTap: onDetails,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Wrap(
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 10,
-            runSpacing: 6,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
             children: [
-              const ResponderTag('EMERGENCY RESPONSE', icon: AppIcons.form),
+              Text(
+                'Incident #${assignment.id}',
+                style: MdrrmoTypography.tabular(
+                  MdrrmoTypography.labelSm.copyWith(color: palette.textMuted),
+                ),
+              ),
               ResponderTag(
                 '${priorityLabel(assignment.priority)} priority',
                 color: Semantic.priority(assignment.priority),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             assignment.emergencyType,
             style: MdrrmoTypography.titleLg.copyWith(color: palette.textPrimary),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 4),
           Text(
-            'Incident #${assignment.id}',
-            style: MdrrmoTypography.tabular(
-              MdrrmoTypography.labelSm.copyWith(color: palette.textMuted),
+            assignment.pickup,
+            style: MdrrmoTypography.bodyMd.copyWith(
+              color: palette.textSecondary,
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: palette.surfaceSubtle,
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-              border: Border.all(color: palette.border),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: palette.brandTint,
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                  ),
-                  child: Icon(
-                    AppIcons.pin,
-                    color: palette.brand,
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'INCIDENT LOCATION',
-                        style: MdrrmoTypography.labelSm.copyWith(
-                          color: palette.textMuted,
-                          letterSpacing: 0.4,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        assignment.pickup,
-                        style: MdrrmoTypography.bodyMd.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: palette.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+          StepperBar(
+            labels: step == 0
+                ? [Assignment.steps.first]
+                : Assignment.steps.sublist(1),
+            current: step == 0 ? 0 : step - 1,
           ),
-          const SizedBox(height: AppSpacing.md),
-          StepperBar(labels: Assignment.steps, current: step),
-          const SizedBox(height: AppSpacing.md),
-          AppButton(
-            label: busy ? 'Saving update...' : assignment.actionLabel,
-            icon: step == 0
-                ? AppIcons.navigation
-                : step == 1
-                ? AppIcons.pin
-                : AppIcons.checkCircle,
-            loading: busy,
-            onPress: enabled ? onAdvance : null,
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: _AssignmentActionTile(
-                    icon: AppIcons.navigation,
-                    label: 'Navigate',
-                    onPressed:
-                        hasLocation || assignment.pickup.trim().isNotEmpty
-                        ? () => _navigate(context)
-                        : null,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: _AssignmentActionTile(
-                    icon: AppIcons.form,
-                    label: 'View report',
-                    onPressed: onDetails,
-                  ),
-                ),
-                if (onDriverForm != null) ...[
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: _AssignmentActionTile(
-                      icon: assignment.hasDriverForm
-                          ? AppIcons.checkCircle
-                          : AppIcons.badgeCheck,
-                      label: 'Driver Form',
-                      onPressed: onDriverForm,
-                      iconColor: assignment.hasDriverForm
-                          ? palette.success
-                          : null,
-                    ),
-                  ),
-                ],
-              ],
+          if (assignment.hasActionButton) ...[
+            const SizedBox(height: AppSpacing.md),
+            AppButton(
+              label: busy ? 'Saving...' : assignment.actionLabel,
+              loading: busy,
+              onPress:
+                  enabled && (step != 3 || assignment.hospitalId != null)
+                  ? onAdvance
+                  : null,
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            !assignment.canAdvance
-                ? 'Waiting for dispatcher confirmation.'
-                : step == 0
-                ? 'Start your trip when you are ready to leave.'
-                : step == 1
-                ? 'Update your status once you reach the incident.'
-                : 'Complete the dispatch when the response is finished.',
-            textAlign: TextAlign.center,
-            style: MdrrmoTypography.labelSm.copyWith(
-              color: palette.textMuted,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          if (!hasLocation)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
+          ] else if (step == 1) ...[
+            const SizedBox(height: AppSpacing.md),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.sm,
+              ),
+              decoration: BoxDecoration(
+                color: palette.surfaceSubtle,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+              ),
               child: Text(
-                'No map pin recorded. Confirm the destination in navigation.',
-                textAlign: TextAlign.center,
-                style: MdrrmoTypography.labelSm.copyWith(
-                  color: palette.textMuted,
-                  fontWeight: FontWeight.w500,
+                'En route · Marks On scene automatically within 5 m.',
+                style: MdrrmoTypography.bodySm.copyWith(
+                  color: palette.textSecondary,
                 ),
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AssignmentActionTile extends StatelessWidget {
-  const _AssignmentActionTile({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-    this.iconColor,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onPressed;
-  final Color? iconColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = MdrrmoColors.of(context);
-    final enabled = onPressed != null;
-    return OutlinedButton(
-      onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-        minimumSize: const Size(0, 48),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-        ),
-        side: BorderSide(color: palette.border),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            icon,
-            size: 18,
-            color: enabled ? (iconColor ?? palette.brand) : palette.textMuted,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: MdrrmoTypography.labelSm.copyWith(
-              color: enabled ? palette.textPrimary : palette.textMuted,
+          ],
+          const SizedBox(height: AppSpacing.sm + 2),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(44),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
             ),
+            onPressed: hasLocation || assignment.pickup.trim().isNotEmpty
+                ? () => _navigate(context)
+                : null,
+            child: const Text('Navigate', overflow: TextOverflow.ellipsis),
           ),
+          if (!assignment.canAdvance ||
+              (step == 3 && assignment.hospitalId == null) ||
+              !hasLocation) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              !assignment.canAdvance
+                  ? 'Waiting for dispatcher confirmation.'
+                  : step == 3 && assignment.hospitalId == null
+                  ? 'Open Navigate to select a hospital.'
+                  : 'No map pin recorded. Confirm destination in Navigate.',
+              textAlign: TextAlign.center,
+              style: MdrrmoTypography.labelSm.copyWith(
+                color: palette.warning,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _ConnectionCard extends StatelessWidget {
-  const _ConnectionCard({required this.realtime, required this.tracking});
+class _ConnectionStrip extends StatelessWidget {
+  const _ConnectionStrip({required this.realtime, required this.tracking});
 
   final DriverRealtime realtime;
   final DriverTracking tracking;
@@ -604,8 +560,7 @@ class _ConnectionCard extends StatelessWidget {
     final attention = tracking.error != null;
     return showAppSheet<void>(
       context,
-      title: 'Live updates & GPS',
-      subtitle: 'Dispatch tracking connection diagnostics',
+      title: 'Connection & GPS',
       builder: (sheetCtx) => ListView(
         shrinkWrap: true,
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -613,36 +568,32 @@ class _ConnectionCard extends StatelessWidget {
           AppSectionGroup(
             children: [
               AppRowItem(
-                leading: Icon(
-                  realtime.connected ? AppIcons.wifi : AppIcons.wifiOff,
-                  color: realtime.connected ? palette.success : palette.warningIcon,
-                  size: 18,
-                ),
                 title: 'Dispatch channel',
                 subtitle: realtime.status,
+                trailing: AppStatusBadge(
+                  realtime.connected ? 'Online' : 'Reconnecting',
+                  color: realtime.connected
+                      ? palette.success
+                      : palette.warning,
+                  dot: true,
+                ),
               ),
               AppRowItem(
-                leading: Icon(
-                  attention ? AppIcons.alert : AppIcons.locate,
-                  color: attention ? palette.warningIcon : palette.brand,
-                  size: 18,
-                ),
                 title: 'GPS telemetry',
                 subtitle: attention
-                    ? 'Location update failed. ${tracking.error} Retrying automatically.'
+                    ? '${tracking.error} Retrying.'
                     : tracking.active
                     ? tracking.lastSent == null
-                          ? 'Waiting for your first GPS update.'
-                          : 'Last location shared at ${TimeOfDay.fromDateTime(tracking.lastSent!).format(sheetCtx)}.'
-                    : 'Keep location enabled to share your position with dispatch.',
+                          ? 'Waiting for first GPS fix.'
+                          : 'Last sent at ${TimeOfDay.fromDateTime(tracking.lastSent!).format(sheetCtx)}.'
+                    : 'Enable location to share position.',
               ),
             ],
           ),
           if (!realtime.connected) ...[
             const SizedBox(height: AppSpacing.md),
             AppButton(
-              label: 'Reconnect live updates',
-              icon: AppIcons.refresh,
+              label: 'Reconnect',
               onPress: () {
                 realtime.reconnect();
                 Navigator.pop(sheetCtx);
@@ -657,29 +608,67 @@ class _ConnectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
-    final attention = tracking.error != null;
-    final location = attention
-        ? 'Location needs attention'
+    final offline =
+        InternetConnection.instance.hasChecked &&
+        !InternetConnection.instance.online;
+    final attention = offline || tracking.error != null || !realtime.connected;
+    final label = offline
+        ? 'Offline · Updates queued'
+        : tracking.error != null
+        ? 'GPS retrying'
+        : !realtime.connected
+        ? 'Live updates reconnecting'
         : tracking.active
-        ? 'Location sharing on'
-        : tracking.busy
-        ? 'Starting location sharing'
-        : 'Location sharing inactive';
+        ? 'Live sync & GPS active'
+        : 'Live updates connected';
+    final dotColor = offline
+        ? palette.danger
+        : attention
+        ? palette.warningIcon
+        : palette.success;
 
     return Surface(
       padding: EdgeInsets.zero,
-      child: AppRowItem(
-        onTap: () => _openDetails(context),
-        showChevron: true,
-        leading: Icon(
-          attention ? AppIcons.wifiOff : AppIcons.radio,
-          size: 20,
-          color: attention ? palette.warningIcon : palette.brand,
+      tint: attention ? palette.warningTint : palette.surface,
+      borderColor: offline
+          ? palette.danger.withValues(alpha: 0.40)
+          : attention
+          ? palette.warning.withValues(alpha: 0.35)
+          : null,
+      onTap: () => _openDetails(context),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm + 2,
         ),
-        title: location,
-        subtitle: realtime.connected
-            ? 'Live updates connected'
-            : 'Tap for connection details',
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: dotColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm + 2),
+            Expanded(
+              child: Text(
+                label,
+                style: MdrrmoTypography.bodySm.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: palette.textPrimary,
+                ),
+              ),
+            ),
+            Text(
+              'Details',
+              style: MdrrmoTypography.labelSm.copyWith(
+                color: palette.textMuted,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -725,7 +714,7 @@ class _MapHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
     return Container(
-      height: 180,
+      height: 176,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: palette.border),
@@ -848,27 +837,11 @@ class _MapHero extends StatelessWidget {
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                   border: Border.all(color: palette.border),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: palette.success,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      state.assignment == null
-                          ? 'Service area · Balagtas'
-                          : 'Assigned incident · Balagtas',
-                      style: MdrrmoTypography.labelSm.copyWith(
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  state.assignment == null ? 'Service area' : 'Incident area',
+                  style: MdrrmoTypography.labelSm.copyWith(
+                    color: palette.textPrimary,
+                  ),
                 ),
               ),
             ),

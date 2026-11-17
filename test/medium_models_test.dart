@@ -11,12 +11,14 @@ void main() {
       'priority': 'high',
     };
     expect(Assignment.fromJson(base).actionLabel, 'Start trip');
+    expect(Assignment.fromJson(base).hasActionButton, isTrue);
     final enRoute = Assignment.fromJson({
       ...base,
       'trip': {'started_at': '2026-11-12T08:00:00Z'},
     });
     expect(enRoute.step, 1);
-    expect(enRoute.actionLabel, 'Mark as on scene');
+    expect(enRoute.actionLabel, 'En route');
+    expect(enRoute.hasActionButton, isFalse);
     final onScene = Assignment.fromJson({
       ...base,
       'trip': {
@@ -25,11 +27,25 @@ void main() {
       },
     });
     expect(onScene.step, 2);
-    expect(onScene.actionLabel, 'Complete dispatch');
+    expect(onScene.actionLabel, 'Transporting');
+    expect(onScene.hasActionButton, isTrue);
+    final transporting = Assignment.fromJson({
+      ...base,
+      'hospital_id': 7,
+      'trip': {
+        'started_at': '2026-11-12T08:00:00Z',
+        'on_scene_at': '2026-11-12T08:10:00Z',
+        'picked_up_at': '2026-11-12T08:15:00Z',
+      },
+    });
+    expect(transporting.step, 3);
+    expect(transporting.actionLabel, 'Complete dispatch');
+    expect(transporting.hasActionButton, isTrue);
+    expect(transporting.hospitalId, 7);
     expect(
       Assignment.fromJson({...base, 'response_status': 'returning'})
           .actionLabel,
-      'Complete dispatch',
+      'Transporting',
     );
     expect(
       Assignment.fromJson({

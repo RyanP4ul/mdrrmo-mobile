@@ -7,36 +7,82 @@ import '../data/resident_models.dart';
 Widget statusPill(IncidentStatus s, [BuildContext? context]) {
   final palette = context != null ? MdrrmoColors.of(context) : null;
   return switch (s) {
-    IncidentStatus.unknown => Pill(
-      'Unknown status',
+    IncidentStatus.unknown => AppStatusBadge(
+      'Status unavailable',
       color: palette?.textMuted ?? AppColors.neutral,
       icon: AppIcons.infoCircle,
     ),
-    IncidentStatus.active => Pill(
-      'Pending review',
+    IncidentStatus.active => AppStatusBadge(
+      'Waiting for review',
       color: palette?.warning ?? Semantic.warning,
-      icon: AppIcons.alert,
+      icon: AppIcons.clock,
     ),
-    IncidentStatus.responding => Pill(
-      'In progress',
+    IncidentStatus.responding => AppStatusBadge(
+      'Help on the way',
       color: palette?.brand ?? AppColors.primary,
-      icon: AppIcons.bolt,
+      icon: AppIcons.truck,
     ),
-    IncidentStatus.resolved => Pill(
-      'Resolved',
+    IncidentStatus.resolved => AppStatusBadge(
+      'Completed',
       color: palette?.success ?? Semantic.success,
       icon: AppIcons.checkCircle,
     ),
-    IncidentStatus.withdrawn => Pill(
-      'Withdrawn',
+    IncidentStatus.withdrawn => AppStatusBadge(
+      'Cancelled',
       color: palette?.textMuted ?? AppColors.neutral,
+      icon: AppIcons.close,
     ),
-    IncidentStatus.invalid => Pill(
-      'Invalid',
+    IncidentStatus.invalid => AppStatusBadge(
+      'Closed',
       color: palette?.danger ?? Semantic.danger,
-      icon: AppIcons.alert,
+      icon: AppIcons.infoCircle,
     ),
   };
+}
+
+/// Plain-language status label & badge for resident service/report records.
+(String, Color, IconData) residentStatusPresentation(
+  String rawStatus,
+  MdrrmoColors palette, {
+  bool schedule = false,
+}) {
+  final normalized = rawStatus.toLowerCase().trim();
+  if (schedule) {
+    return switch (normalized) {
+      'pending' => ('Waiting for confirmation', palette.warning, AppIcons.clock),
+      'acknowledged' => ('Under review', palette.brand, AppIcons.infoCircle),
+      'confirmed' => ('Confirmed', palette.success, AppIcons.checkCircle),
+      'en-route' => ('Team on the way', palette.brand, AppIcons.truck),
+      'on-scene' => ('Team on site', palette.brand, AppIcons.pin),
+      'completed' => ('Completed', palette.success, AppIcons.checkCircle),
+      'cancelled' => ('Cancelled', palette.textMuted, AppIcons.close),
+      'declined' => ('Declined', palette.danger, AppIcons.infoCircle),
+      _ => ('In progress', palette.textMuted, AppIcons.infoCircle),
+    };
+  }
+  return switch (normalized) {
+    'pending' => ('Waiting for review', palette.warning, AppIcons.clock),
+    'acknowledged' => ('Received by MDRRMO', palette.brand, AppIcons.infoCircle),
+    'dispatched' => ('Help on the way', palette.brand, AppIcons.truck),
+    'resolved' => ('Completed', palette.success, AppIcons.checkCircle),
+    'withdrawn' => ('Cancelled', palette.textMuted, AppIcons.close),
+    'invalid' => ('Closed', palette.danger, AppIcons.infoCircle),
+    _ => ('Status unavailable', palette.textMuted, AppIcons.infoCircle),
+  };
+}
+
+Widget residentStatusBadge(
+  String rawStatus,
+  BuildContext context, {
+  bool schedule = false,
+}) {
+  final palette = MdrrmoColors.of(context);
+  final (label, color, icon) = residentStatusPresentation(
+    rawStatus,
+    palette,
+    schedule: schedule,
+  );
+  return AppStatusBadge(label, color: color, icon: icon);
 }
 
 /// Rounded icon tile in the category colour (solid) or tinted (soft).

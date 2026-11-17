@@ -90,7 +90,7 @@ class _SosScreenState extends State<SosScreen> {
         if (mounted) {
           setState(
             () => _error =
-                'No internet connection right now. Please tap "Call Hotline Now" above instead.',
+                'No internet connection right now. Please tap "Call Hotline Now" instead.',
           );
         }
         return;
@@ -133,7 +133,6 @@ class _SosScreenState extends State<SosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = MdrrmoColors.of(context);
     return ListenableBuilder(
       listenable: Listenable.merge([_connection, DispatcherPhone.number]),
       builder: (context, _) {
@@ -150,96 +149,50 @@ class _SosScreenState extends State<SosScreen> {
           ),
           child: SafeArea(
             top: false,
-            child: ContentFrame(
-              maxWidth: 520,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  AppSpacing.md,
-                  AppSpacing.lg,
-                  AppSpacing.xxl,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg,
+                AppSpacing.md,
+                AppSpacing.lg,
+                AppSpacing.xxl,
+              ),
+              child: ContentFrame(
+                maxWidth: 520,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!online) ...[
+                      const AppBanner(
+                        tone: AppBannerTone.warning,
+                        icon: AppIcons.wifiOff,
+                        title: 'Offline SOS',
+                        message:
+                            'No internet. Call our hotline with your regular phone.',
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                    ],
+                    if (_error != null) ...[
+                      AppBanner(
+                        tone: AppBannerTone.danger,
+                        icon: AppIcons.alert,
+                        message: _error!,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                    ],
+                    if (online) ...[
+                      _InternetCallCard(
+                        busy: _busy,
+                        onCall: _system,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                    ],
+                    _PhoneCallCard(
+                      number: number,
+                      isAlternative: online,
+                      onCall: _native,
+                    ),
+                  ],
                 ),
-                children: [
-                  if (!online) ...[
-                    const AppBanner(
-                      tone: AppBannerTone.warning,
-                      icon: AppIcons.wifiOff,
-                      title: 'Offline SOS',
-                      message:
-                          'No internet right now. You can still call our emergency hotline using your regular phone.',
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                  ] else ...[
-                    Text(
-                      'Need help right away?',
-                      style: MdrrmoTypography.displaySm.copyWith(
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Tap a button below to speak with our emergency team.',
-                      style: MdrrmoTypography.bodyMd.copyWith(
-                        color: palette.textSecondary,
-                        height: 1.45,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                  ],
-                  _PhoneCallCard(
-                    number: number,
-                    onCall: _native,
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: AppSpacing.md),
-                    AppBanner(
-                      tone: AppBannerTone.danger,
-                      icon: AppIcons.alert,
-                      message: _error!,
-                    ),
-                  ],
-                  if (online) ...[
-                    const SizedBox(height: AppSpacing.lg),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Divider(height: 1, color: palette.border),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md,
-                          ),
-                          child: Text(
-                            'OR NO PHONE LOAD?',
-                            style: MdrrmoTypography.labelSm.copyWith(
-                              color: palette.textMuted,
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: Divider(height: 1, color: palette.border),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.lg),
-                    _InternetCallCard(
-                      guest: widget.guest,
-                      busy: _busy,
-                      name: _name,
-                      contact: _contact,
-                      address: _address,
-                      onCall: _system,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    const AppBanner(
-                      tone: AppBannerTone.info,
-                      icon: AppIcons.info,
-                      title: 'Not sure which one to choose?',
-                      message:
-                          'Use "Call Hotline Now" if you have normal phone signal or load. Use "Start Free Internet Call" if you only have Wi-Fi or mobile data.',
-                    ),
-                  ],
-                ],
               ),
             ),
           ),
@@ -250,119 +203,82 @@ class _SosScreenState extends State<SosScreen> {
 }
 
 class _PhoneCallCard extends StatelessWidget {
-  const _PhoneCallCard({required this.number, required this.onCall});
+  const _PhoneCallCard({
+    required this.number,
+    required this.isAlternative,
+    required this.onCall,
+  });
 
   final String number;
+  final bool isAlternative;
   final VoidCallback onCall;
 
   @override
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
     return Surface(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      borderColor: palette.danger.withValues(alpha: 0.35),
+      padding: const EdgeInsets.all(AppSpacing.md + 2),
+      tint: isAlternative ? palette.surfaceSubtle : null,
+      borderColor: isAlternative
+          ? palette.border
+          : palette.danger.withValues(alpha: 0.45),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
                   color: palette.dangerTint,
                   borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
-                child: Icon(
-                  AppIcons.phoneCall,
-                  color: palette.danger,
-                  size: 24,
-                ),
+                child: Icon(AppIcons.phoneCall, color: palette.danger, size: 20),
               ),
-              const SizedBox(width: AppSpacing.md),
+              const SizedBox(width: AppSpacing.sm + 4),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.xs,
                   children: [
-                    AppStatusBadge(
-                      'NO INTERNET NEEDED',
-                      color: palette.danger,
-                      dot: false,
-                      icon: AppIcons.siren,
-                    ),
-                    const SizedBox(height: 6),
                     Text(
-                      'Call Regular Phone',
-                      style: MdrrmoTypography.titleLg.copyWith(
+                      'Regular phone call',
+                      style: MdrrmoTypography.titleMd.copyWith(
                         color: palette.textPrimary,
                       ),
+                    ),
+                    AppStatusBadge(
+                      isAlternative ? 'Alternative' : 'No internet needed',
+                      color: isAlternative ? palette.textMuted : palette.danger,
+                      dot: false,
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.sm + 2),
           Text(
-            'Opens your phone\'s normal call screen. Works even without Wi-Fi or internet.',
-            style: MdrrmoTypography.bodyMd.copyWith(
-              color: palette.textSecondary,
-              height: 1.45,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.md,
-            ),
-            decoration: BoxDecoration(
-              color: palette.dangerTint.withValues(
-                alpha: palette.isDark ? 0.45 : 0.65,
-              ),
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-              border: Border.all(
-                color: palette.danger.withValues(alpha: 0.25),
-              ),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  'EMERGENCY HOTLINE',
-                  textAlign: TextAlign.center,
-                  style: MdrrmoTypography.labelSm.copyWith(
-                    color: palette.danger,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  number.isEmpty ? 'Hotline not set up yet' : number,
-                  textAlign: TextAlign.center,
-                  style: MdrrmoTypography.tabular(
-                    MdrrmoTypography.displaySm.copyWith(
-                      color: palette.textPrimary,
-                    ),
-                  ),
-                ),
-              ],
+            number.isEmpty ? 'Hotline not set up yet' : number,
+            style: MdrrmoTypography.tabular(
+              MdrrmoTypography.titleLg.copyWith(color: palette.textPrimary),
             ),
           ),
           const SizedBox(height: AppSpacing.md),
           ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 56),
+            constraints: const BoxConstraints(minHeight: 50),
             child: AppButton(
               label: 'Call Hotline Now',
               icon: AppIcons.phoneCall,
-              kind: AppButtonKind.destructive,
+              kind: isAlternative
+                  ? AppButtonKind.dangerOutline
+                  : AppButtonKind.destructive,
               onPress: onCall,
             ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'Uses regular mobile signal (carrier call rates may apply).',
-            textAlign: TextAlign.center,
-            style: MdrrmoTypography.bodySm.copyWith(color: palette.textMuted),
           ),
         ],
       ),
@@ -372,19 +288,11 @@ class _PhoneCallCard extends StatelessWidget {
 
 class _InternetCallCard extends StatelessWidget {
   const _InternetCallCard({
-    required this.guest,
     required this.busy,
-    required this.name,
-    required this.contact,
-    required this.address,
     required this.onCall,
   });
 
-  final bool guest;
   final bool busy;
-  final TextEditingController name;
-  final TextEditingController contact;
-  final TextEditingController address;
   final VoidCallback onCall;
 
   @override
@@ -392,108 +300,48 @@ class _InternetCallCard extends StatelessWidget {
     final palette = MdrrmoColors.of(context);
     return Surface(
       padding: const EdgeInsets.all(AppSpacing.lg),
-      borderColor: palette.brand.withValues(alpha: 0.28),
+      tint: palette.brandTint.withValues(alpha: palette.isDark ? 0.35 : 0.45),
+      borderColor: palette.brand.withValues(alpha: 0.45),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: palette.brandTint,
+                  color: palette.brand,
                   borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
-                child: Icon(
-                  AppIcons.wifi,
-                  color: palette.brand,
-                  size: 24,
-                ),
+                child: const Icon(AppIcons.mic, color: Colors.white, size: 22),
               ),
-              const SizedBox(width: AppSpacing.md),
+              const SizedBox(width: AppSpacing.sm + 4),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.xs,
                   children: [
-                    AppStatusBadge(
-                      'FREE WITH WI-FI OR DATA',
-                      color: palette.brand,
-                      dot: false,
-                      icon: AppIcons.mic,
-                    ),
-                    const SizedBox(height: 6),
                     Text(
-                      'Free Internet Call',
+                      'Free internet call',
                       style: MdrrmoTypography.titleLg.copyWith(
                         color: palette.textPrimary,
                       ),
+                    ),
+                    AppStatusBadge(
+                      'Wi-Fi / data',
+                      color: palette.brand,
+                      dot: false,
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: AppSpacing.md),
-          Text(
-            'Talk directly inside this app using Wi-Fi or mobile data. No phone load needed — just keep this screen open.',
-            style: MdrrmoTypography.bodyMd.copyWith(
-              color: palette.textSecondary,
-              height: 1.45,
-            ),
-          ),
-          if (guest) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Theme(
-              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                childrenPadding: const EdgeInsets.only(top: 8, bottom: 8),
-                title: Text(
-                  'Add your name & location (optional)',
-                  style: MdrrmoTypography.bodyMd.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: palette.textPrimary,
-                  ),
-                ),
-                subtitle: Text(
-                  'Skip this if it\'s urgent — you can call right away.',
-                  style: MdrrmoTypography.bodySm.copyWith(
-                    color: palette.textSecondary,
-                  ),
-                ),
-                children: [
-                  AppTextField(
-                    controller: name,
-                    label: 'Your name',
-                    hint: 'e.g. Maria Santos',
-                    required: false,
-                    maxLength: 120,
-                  ),
-                  const SizedBox(height: 12),
-                  AppTextField(
-                    controller: contact,
-                    label: 'Your phone number',
-                    hint: '09XX XXX XXXX',
-                    required: false,
-                    maxLength: 40,
-                    keyboardType: TextInputType.phone,
-                  ),
-                  const SizedBox(height: 12),
-                  AppTextField(
-                    controller: address,
-                    label: 'Where are you?',
-                    hint: 'House no., street, or barangay',
-                    required: false,
-                    maxLength: 255,
-                    textInputAction: TextInputAction.done,
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.md + 2),
           ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 54),
             child: AppButton(

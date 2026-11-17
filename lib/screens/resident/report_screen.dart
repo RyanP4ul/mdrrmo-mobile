@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -51,6 +52,8 @@ class _ResidentReportScreenState extends State<ResidentReportScreen> {
   String? _submitError;
   int _locationRequest = 0;
   bool _mapReady = false;
+  Uint8List? _photoBytes;
+  String? _photoName;
 
   final _location = TextEditingController();
   final _notes = TextEditingController();
@@ -159,6 +162,8 @@ class _ResidentReportScreenState extends State<ResidentReportScreen> {
               location: _location.text.trim(),
               pin: _pin,
               notes: _notes.text.trim(),
+              photoBytes: _photoBytes,
+              photoName: _photoName,
             )).reference;
       if (!mounted) return;
       setState(() {
@@ -187,11 +192,39 @@ class _ResidentReportScreenState extends State<ResidentReportScreen> {
       _reporter = ReporterType.victim;
       _pin = _balagtas;
       _pinSelected = false;
+      _photoBytes = null;
+      _photoName = null;
       _notes.clear();
       _location.text = _isGuest
           ? ''
           : ResidentScope.of(context).profile.address;
     });
+  }
+
+  Future<void> _takePhoto() async {
+    if (_sending) return;
+    try {
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        if (mounted) snack(context, 'Choose a photo smaller than 5 MB.');
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _photoBytes = bytes;
+        _photoName = file.name;
+        _submitError = null;
+      });
+    } catch (error) {
+      if (mounted) snack(context, apiErrorMessage(error));
+    }
   }
 
   Future<void> _useCurrentLocation() async {
@@ -298,11 +331,7 @@ class _ResidentReportScreenState extends State<ResidentReportScreen> {
                 const SizedBox(height: AppSpacing.lg),
               ],
               const ResidentFormStep(step: 1, label: 'INCIDENT TYPE'),
-              const ResidentHeading(
-                'What happened?',
-                subtitle:
-                    'Choose the type of incident, then add the location and details.',
-              ),
+              const ResidentHeading('What happened?'),
               Text(
                 'How are you involved?',
                 style: MdrrmoTypography.labelSm.copyWith(
@@ -364,10 +393,12 @@ class _ResidentReportScreenState extends State<ResidentReportScreen> {
                         : ResidentScope.of(context).load,
                   ),
                 ),
-              for (final type in types)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _TypeTile(type, onTap: () => _choose(type)),
+              if (types.isNotEmpty)
+                AppSectionGroup(
+                  children: [
+                    for (final type in types)
+                      _TypeTile(type, onTap: () => _choose(type)),
+                  ],
                 ),
             ],
           ),
@@ -409,48 +440,58 @@ class _ResidentReportScreenState extends State<ResidentReportScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: _sending
-                              ? null
-                              : () => setState(() {
-                                  _locationRequest++;
-                                  _locating = false;
-                                  _locationError = null;
-                                  _submitError = null;
-                                  _step = _Step.pick;
-                                }),
-                          icon: const Icon(AppIcons.back, size: 16),
-                          label: const Text('Change incident type'),
-                        ),
-                      ),
                       const ResidentFormStep(
                         step: 2,
                         label: 'LOCATION & DETAILS',
                       ),
                       Surface(
-                        padding: const EdgeInsets.all(AppSpacing.md),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.md,
+                          vertical: AppSpacing.sm + 2,
+                        ),
                         child: Row(
                           children: [
-                            IncidentTile(type, size: 42),
+                            IncidentTile(type, size: 38),
                             const SizedBox(width: AppSpacing.md),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              child: Wrap(
+                                alignment: WrapAlignment.spaceBetween,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: AppSpacing.sm,
+                                runSpacing: AppSpacing.xs,
                                 children: [
-                                  Text(
-                                    type.label,
-                                    style: MdrrmoTypography.titleMd.copyWith(
-                                      color: palette.textPrimary,
-                                    ),
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        type.label,
+                                        style: MdrrmoTypography.titleMd
+                                            .copyWith(
+                                              color: palette.textPrimary,
+                                            ),
+                                      ),
+                                      Text(
+                                        _reporter == ReporterType.victim
+                                            ? 'I need help'
+                                            : 'I witnessed it',
+                                        style: MdrrmoTypography.bodySm.copyWith(
+                                          color: palette.textSecondary,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Reporting as ${_reporter == ReporterType.victim ? 'victim' : 'witness'}',
-                                    style: MdrrmoTypography.bodySm.copyWith(
-                                      color: palette.textSecondary,
-                                    ),
+                                  TextButton(
+                                    onPressed: _sending
+                                        ? null
+                                        : () => setState(() {
+                                            _locationRequest++;
+                                            _locating = false;
+                                            _locationError = null;
+                                            _submitError = null;
+                                            _step = _Step.pick;
+                                          }),
+                                    child: const Text('Change incident type'),
                                   ),
                                 ],
                               ),
@@ -634,6 +675,88 @@ class _ResidentReportScreenState extends State<ResidentReportScreen> {
                         maxLines: 3,
                         textInputAction: TextInputAction.done,
                       ),
+                      if (!_isGuest) ...[
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          'Photo (optional)',
+                          style: MdrrmoTypography.labelSm.copyWith(
+                            color: palette.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Attach a picture of the incident if available (max 5 MB).',
+                          style: MdrrmoTypography.bodySm.copyWith(
+                            color: palette.textMuted,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        if (_photoBytes != null)
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(AppRadius.md),
+                              border: Border.all(color: palette.border),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Image.memory(
+                                  _photoBytes!,
+                                  height: 180,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.md,
+                                    vertical: AppSpacing.xs,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          _photoName ?? 'Selected photo',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: MdrrmoTypography.bodySm
+                                              .copyWith(
+                                                color: palette.textMuted,
+                                              ),
+                                        ),
+                                      ),
+                                      TextButton(
+                                        onPressed: _sending ? null : _takePhoto,
+                                        child: const Text('Retake'),
+                                      ),
+                                      TextButton(
+                                        onPressed: _sending
+                                            ? null
+                                            : () => setState(() {
+                                                _photoBytes = null;
+                                                _photoName = null;
+                                              }),
+                                        child: Text(
+                                          'Remove',
+                                          style: TextStyle(
+                                            color: palette.danger,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          AppButton(
+                            label: 'Take photo (optional)',
+                            icon: AppIcons.camera,
+                            kind: AppButtonKind.outline,
+                            onPress: _sending ? null : _takePhoto,
+                          ),
+                      ],
                       if (_submitError != null) ...[
                         const SizedBox(height: AppSpacing.md),
                         AppBanner(
@@ -774,18 +897,16 @@ class _TypeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = MdrrmoColors.of(context);
-    return Surface(
-      padding: EdgeInsets.zero,
-      child: AppRowItem(
-        onTap: onTap,
-        showChevron: true,
-        padding: const EdgeInsets.all(AppSpacing.md + 2),
-        leading: IncidentTile(type, soft: true, size: 44),
-        title: type.label,
-        subtitle: type.hint ?? 'Add location and incident details',
-        trailing: Icon(AppIcons.chevron, color: palette.textMuted, size: 18),
+    return AppRowItem(
+      onTap: onTap,
+      showChevron: true,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
       ),
+      leading: IncidentTile(type, soft: true, size: 40),
+      title: type.label,
+      subtitle: type.hint,
     );
   }
 }

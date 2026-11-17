@@ -92,10 +92,10 @@ class _ResidentNotificationsScreenState
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 NotificationsHeaderSection(
-                  title: 'Your updates',
+                  title: 'Updates',
                   subtitle: state.unreadCount == 0
-                      ? 'Report and service updates from MDRRMO.'
-                      : '${state.unreadCount} unread updates from MDRRMO.',
+                      ? null
+                      : '${state.unreadCount} unread',
                   unreadOnly: _unreadOnly,
                   unreadCount: state.unreadCount,
                   onFilterChanged: (value) =>
@@ -113,30 +113,32 @@ class _ResidentNotificationsScreenState
                         : 'No updates to show',
                     message: _unreadOnly && state.unreadCount > 0
                         ? 'Load more updates below or choose All updates.'
-                        : 'New report and service updates will appear here.',
-                  ),
-                for (final notification in items)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Builder(
-                      builder: (context) {
-                        final (icon, color) = _look(
-                          notification.kind,
-                          palette,
-                        );
-                        return NotificationUpdateTile(
-                          message: notification.message,
-                          timestampText: timeAgo(notification.time),
-                          icon: icon,
-                          iconColor: color,
-                          unread: notification.unread,
-                          hasDetails:
-                              notification.relatedId != null &&
-                              notification.relatedKind != null,
-                          onTap: () => _open(state, notification),
-                        );
-                      },
-                    ),
+                        : 'Report and service updates appear here.',
+                  )
+                else
+                  AppSectionGroup(
+                    children: [
+                      for (final notification in items)
+                        Builder(
+                          builder: (context) {
+                            final (icon, color) = _look(
+                              notification.kind,
+                              palette,
+                            );
+                            return NotificationUpdateTile(
+                              message: notification.message,
+                              timestampText: timeAgo(notification.time),
+                              icon: icon,
+                              iconColor: color,
+                              unread: notification.unread,
+                              hasDetails:
+                                  notification.relatedId != null &&
+                                  notification.relatedKind != null,
+                              onTap: () => _open(state, notification),
+                            );
+                          },
+                        ),
+                    ],
                   ),
                 PageLoader(
                   hasMore: state.hasMore('notifications'),

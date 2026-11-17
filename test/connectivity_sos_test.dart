@@ -140,10 +140,10 @@ void main() {
         ),
       );
       expect(find.text('Call Hotline Now'), findsOneWidget);
+      await tester.ensureVisible(find.text('Start Free Internet Call'));
       expect(find.text('Start Free Internet Call'), findsOneWidget);
       expect(find.text('Native-to-Native Call'), findsNothing);
       expect(find.text('System-to-System Call'), findsNothing);
-      expect(find.text('Not sure which one to choose?'), findsOneWidget);
       await tester.ensureVisible(find.text('Start Free Internet Call'));
       await tester.tap(find.text('Start Free Internet Call'));
       await tester.pumpAndSettle();
@@ -181,6 +181,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Call Hotline Now'), findsOneWidget);
+      await tester.ensureVisible(find.text('Start Free Internet Call'));
       expect(find.text('Start Free Internet Call'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());

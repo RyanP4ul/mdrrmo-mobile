@@ -71,12 +71,12 @@ class DetailSection extends StatelessWidget {
   const DetailSection({
     super.key,
     required this.title,
-    required this.icon,
+    this.icon,
     required this.children,
     this.color = AppColors.primary,
   });
   final String title;
-  final IconData icon;
+  final IconData? icon;
   final List<Widget> children;
   final Color color;
   @override
@@ -84,22 +84,24 @@ class DetailSection extends StatelessWidget {
     final palette = MdrrmoColors.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: Surface(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 0, 2, AppSpacing.sm),
+            child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.11),
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                if (icon != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.11),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: Icon(icon, size: 15, color: color),
                   ),
-                  child: Icon(icon, size: 16, color: color),
-                ),
-                const SizedBox(width: AppSpacing.sm + 2),
+                  const SizedBox(width: AppSpacing.sm),
+                ],
                 Expanded(
                   child: Text(
                     title,
@@ -110,10 +112,9 @@ class DetailSection extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.md + 2),
-            ...children,
-          ],
-        ),
+          ),
+          AppSectionGroup(children: children),
+        ],
       ),
     );
   }
@@ -137,7 +138,10 @@ class DetailField extends StatelessWidget {
     final missing = text == null || text.isEmpty;
     final palette = MdrrmoColors.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -164,7 +168,7 @@ class DetailField extends StatelessWidget {
                   missing ? fallback : text,
                   style: MdrrmoTypography.bodyMd.copyWith(
                     color: missing ? palette.textMuted : palette.textPrimary,
-                    fontWeight: missing ? FontWeight.w400 : FontWeight.w600,
+                    fontWeight: missing ? FontWeight.w400 : FontWeight.w500,
                   ),
                 ),
               ],
@@ -182,85 +186,94 @@ class RecordOverview extends StatelessWidget {
     required this.reference,
     required this.title,
     required this.status,
-    required this.icon,
+    this.icon,
+    this.statusLabel,
+    this.statusColor,
     this.priority,
     this.subtitle,
     this.color = AppColors.primary,
   });
   final String reference, title, status;
-  final IconData icon;
+  final String? statusLabel;
+  final Color? statusColor;
+  final IconData? icon;
   final String? priority, subtitle;
   final Color color;
   @override
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
+    final statusBadge = statusLabel != null
+        ? AppStatusBadge(
+            statusLabel!,
+            color: statusColor ?? recordStatusColor(status, context),
+          )
+        : RecordBadge(status);
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md + 2),
+      padding: const EdgeInsets.only(bottom: AppSpacing.lg),
       child: Surface(
-        tint: Color.alphaBlend(
-          color.withValues(alpha: palette.isDark ? 0.08 : 0.04),
-          palette.surface,
-        ),
-        borderColor: color.withValues(alpha: palette.isDark ? 0.36 : 0.28),
         padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.xs,
+              children: [
+                statusBadge,
+                SelectableText(
+                  reference,
+                  style: MdrrmoTypography.tabular(
+                    MdrrmoTypography.labelSm.copyWith(
+                      color: palette.textMuted,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(AppRadius.md),
+                if (icon != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: Icon(icon, color: color, size: 22),
                   ),
-                  child: Icon(icon, color: color, size: 22),
-                ),
-                const SizedBox(width: AppSpacing.md),
+                  const SizedBox(width: AppSpacing.md),
+                ],
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SelectableText(
-                        reference,
-                        style: MdrrmoTypography.tabular(
-                          MdrrmoTypography.labelSm.copyWith(
-                            color: palette.textMuted,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        title,
-                        style: MdrrmoTypography.displaySm.copyWith(
-                          fontSize: 20,
-                          color: palette.textPrimary,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    title,
+                    style: MdrrmoTypography.displaySm.copyWith(
+                      fontSize: 22,
+                      color: palette.textPrimary,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: AppSpacing.md + 2),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: [
-                RecordBadge(status),
-                if (priority != null)
-                  RecordBadge(
-                    '$priority priority',
-                    color: recordStatusColor(priority!, context),
-                    icon: AppIcons.flag,
-                  ),
-              ],
-            ),
-            if (subtitle != null) ...[
-              const SizedBox(height: AppSpacing.sm + 2),
+            if (priority != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: RecordBadge(
+                  '$priority priority',
+                  color: recordStatusColor(priority!, context),
+                  icon: AppIcons.flag,
+                ),
+              ),
+            ],
+            if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.sm),
               Text(
                 subtitle!,
                 style: MdrrmoTypography.bodySm.copyWith(
@@ -281,11 +294,11 @@ class RecordMessage extends StatelessWidget {
     super.key,
     required this.title,
     required this.message,
-    this.icon = AppIcons.info,
+    this.icon,
     this.onRetry,
   });
   final String title, message;
-  final IconData icon;
+  final IconData? icon;
   final VoidCallback? onRetry;
   @override
   Widget build(BuildContext context) => DetailSection(

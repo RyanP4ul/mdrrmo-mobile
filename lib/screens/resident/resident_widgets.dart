@@ -81,16 +81,18 @@ class ResidentShortcut extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
     final enabled = onTap != null;
-    return Surface(
-      padding: EdgeInsets.zero,
-      tint: enabled ? palette.surface : palette.surfaceSubtle,
+    return ColoredBox(
+      color: enabled ? palette.surface : palette.surfaceSubtle,
       child: AppRowItem(
         title: title,
         subtitle: subtitle,
         enabled: enabled,
         onTap: onTap,
         showChevron: true,
-        padding: const EdgeInsets.all(AppSpacing.md + 2),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md,
+        ),
         leading: Container(
           width: 40,
           height: 40,
@@ -121,82 +123,83 @@ class ResidentReportCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
-    return Surface(
-      padding: const EdgeInsets.all(AppSpacing.md + 2),
+    return InkWell(
       onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: double.infinity,
-            child: Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.xs,
-              children: [
-                Text(
-                  report.reference,
-                  style: MdrrmoTypography.tabular(
-                    MdrrmoTypography.labelSm.copyWith(
-                      color: palette.textMuted,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ),
-                statusPill(report.status, context),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              IncidentTile(report.type, soft: true, size: 40),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      report.type.label,
-                      style: MdrrmoTypography.titleMd.copyWith(
-                        fontSize: 15,
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      report.location,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: MdrrmoTypography.bodySm.copyWith(
-                        color: palette.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${fmtDay(report.time)} · ${fmtTime(report.time)}',
-                      style: MdrrmoTypography.tabular(
-                        MdrrmoTypography.labelSm.copyWith(
-                          color: palette.textMuted,
-                          fontWeight: FontWeight.w500,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: AppSpacing.md,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            IncidentTile(report.type, soft: true, size: 40),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          report.type.label,
+                          style: MdrrmoTypography.titleMd.copyWith(
+                            fontSize: 15,
+                            color: palette.textPrimary,
+                          ),
                         ),
                       ),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text(
+                        report.reference,
+                        style: MdrrmoTypography.tabular(
+                          MdrrmoTypography.labelSm.copyWith(
+                            color: palette.textMuted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    report.location,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: MdrrmoTypography.bodySm.copyWith(
+                      color: palette.textSecondary,
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.xs,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      statusPill(report.status, context),
+                      Text(
+                        '${fmtDay(report.time)} · ${fmtTime(report.time)}',
+                        style: MdrrmoTypography.tabular(
+                          MdrrmoTypography.labelSm.copyWith(
+                            color: palette.textMuted,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(width: AppSpacing.sm),
-              Icon(
-                AppIcons.chevron,
-                size: 18,
-                color: palette.textMuted,
-              ),
-            ],
-          ),
-        ],
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Icon(
+              AppIcons.chevron,
+              size: 18,
+              color: palette.textMuted,
+            ),
+          ],
+        ),
       ),
     );
   }

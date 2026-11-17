@@ -43,37 +43,34 @@ class AppHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = MdrrmoColors.of(context);
+    final titleWidget = Text(
+      title,
+      style: MdrrmoTypography.displaySm.copyWith(color: palette.textPrimary),
+    );
     return Padding(
       padding: EdgeInsets.only(bottom: bottomSpacing),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: MdrrmoTypography.displaySm.copyWith(
-                    color: palette.textPrimary,
-                  ),
-                ),
-                if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    subtitle!,
-                    style: MdrrmoTypography.bodySm.copyWith(
-                      color: palette.textSecondary,
-                      height: 1.45,
-                    ),
-                  ),
-                ],
-              ],
+          if (trailing == null)
+            titleWidget
+          else
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.xs,
+              children: [titleWidget, trailing!],
             ),
-          ),
-          if (trailing != null) ...[
-            const SizedBox(width: AppSpacing.sm),
-            trailing!,
+          if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              subtitle!,
+              style: MdrrmoTypography.bodySm.copyWith(
+                color: palette.textSecondary,
+                height: 1.45,
+              ),
+            ),
           ],
         ],
       ),
